@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<!--
+============================================================================
+SIDE PANEL HTML - User Interface Structure
+============================================================================
+FILE PURPOSE:
+This HTML file defines the structure and styling of the side panel interface.
+It creates a modern chat-like UI with a gradient background, message display
+area, and resizable input field.
+
+STRUCTURE:
+- Header: Title and AI status display
+- Content Area: Scrollable message history
+- Input Section: Resizable textarea with drag handle and send button
+
+STYLING:
+- CSS-in-JS using custom properties (CSS variables)
+- Responsive design with flexbox
+- Dark/light theme support via JavaScript
+- Modern glassmorphism effects
+
+JAVASCRIPT:
+- config.js: Configuration settings
+- sidepanel.js: All interactive logic
+============================================================================
+-->
+<html>
+<head>
+  <!-- Character encoding and viewport settings -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chrome Chat</title>
+  
+  <!-- ========================================================================
+       EMBEDDED STYLES - Modern Chat Interface
+       ======================================================================== -->
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      height: 100%;
+      box-sizing: border-box;
+      color-scheme: light dark;
+    }
+    /* --------------------------------------------------------------
+       ACCENT-COLOUR MODE  (Chrome ≥ 109, Edge ≥ 111, Safari ≥ 15.4)
+       -------------------------------------------------------------- */
+    /* These CSS system colours follow the user’s OS / browser accent. */
+    :root {
+      /* For light mode – primary brand colour is the accent itself */
+      --accent-brand: AccentColor;
+      --accent-brand-light: color-mix(in srgb, AccentColor 40%, white);
+
+      /* Dark mode variant (mix with black for depth) */
+      --accent-brand-dark: color-mix(in srgb, AccentColor 30%, black);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --tab-bar-gradient-start: var(--accent-brand-dark);
+        --tab-bar-gradient-end: color-mix(in srgb, var(--accent-brand-dark) 60%, black);
+      }
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --tab-bar-gradient-start: var(--accent-brand);
+        --tab-bar-gradient-end: var(--accent-brand-light);
+      }
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: linear-gradient(180deg, var(--tab-bar-gradient-start, #667eea) 0%, var(--tab-bar-gradient-end, #764ba2) 100%);
+      color: var(--sp-text-color, #fff);
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--tab-bar-header-padding, 12px 12px);
+      background: linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.05));
+      border-bottom: 1px solid var(--sp-border-color, rgba(255,255,255,0.15));
+      backdrop-filter: blur(6px);
+    }
+    .title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.2px;
+    }
+    .status {
+      font-size: 12px;
+      opacity: 0.85;
+    }
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: var(--tab-bar-content-padding, 10px 12px);
+      scrollbar-width: thin;
+      scrollbar-color: var(--sp-scrollbar-thumb, rgba(255,255,255,0.3)) transparent;
+    }
+    .content::-webkit-scrollbar { width: 10px; }
+    .content::-webkit-scrollbar-thumb { background-color: var(--sp-scrollbar-thumb, rgba(255,255,255,0.35)); border-radius: 8px; }
+    .content::-webkit-scrollbar-track { background: transparent; }
+    .bottom {
+      padding: 12px;
+      background: linear-gradient(0deg, rgba(0,0,0,0.15), rgba(0,0,0,0.05));
+      border-top: 1px solid var(--sp-border-color, rgba(255,255,255,0.15));
+      backdrop-filter: blur(6px);
+      display: flex;
+      gap: 8px;
+    }
+    .input {
+      width: 100%;
+      padding: var(--search-input-padding, 10px 14px);
+      padding-right: 44px; /* space for send button */
+      border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
+      border-radius: 14px;
+      background: var(--search-input-background, rgba(255,255,255,0.9));
+      color: var(--search-input-text-color, #333);
+      font-size: var(--search-input-font-size, 13px);
+      outline: none;
+      box-shadow: var(--search-input-shadow, 0 1px 3px rgba(0,0,0,0.1));
+      box-sizing: border-box;
+      transition: box-shadow .2s ease, background .2s ease, border-color .2s ease;
+    }
+    .input:focus {
+      background: var(--search-input-focus-background, rgba(255,255,255,1));
+      box-shadow: var(--search-input-focus-shadow, 0 2px 8px rgba(0,0,0,0.2));
+      border-color: var(--sp-input-border-focus, rgba(255,255,255,0.4));
+    }
+    .send-btn {
+      appearance: none;
+      border: 1px solid var(--sp-button-border, rgba(255,255,255,0.25));
+      background: var(--sp-button-bg, rgba(255,255,255,0.15));
+      color: var(--sp-button-color, #fff);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform .08s ease, background .2s ease, border-color .2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .send-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
+    .send-btn:active { transform: translateY(1px); }
+
+    /* (tool chips removed) */
+
+    /* Resizable textarea with top handle */
+    .input {
+      resize: none;
+      min-height: 36px;
+      max-height: 40vh;
+      line-height: 1.4;
+      overflow: auto;
+    }
+    .resize-handle {
+      position: absolute;
+      top: -6px;
+      left: 12px;
+      right: 12px;
+      height: 10px;
+      cursor: ns-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+    }
+    .resize-handle::before {
+      content: '';
+      width: 24px;
+      height: 3px;
+      border-radius: 3px;
+      background: var(--sp-border-color, rgba(255,255,255,0.3));
+    }
+    .bottom-inner {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+    }
+    .bottom-inner .send-btn {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      height: 32px;
+      width: 36px;
+      padding: 8px;
+      border-radius: 10px;
+    }
+
+    /* Tools button positioned beside send */
+    .bottom-inner .tools-btn {
+      position: absolute;
+      right: 52px;
+      bottom: 12px;
+      height: 32px;
+      width: 36px;
+      padding: 8px;
+      border-radius: 10px;
+      appearance: none;
+      border: 1px solid var(--sp-button-border, rgba(255,255,255,0.25));
+      background: var(--sp-button-bg, rgba(255,255,255,0.15));
+      color: var(--sp-button-color, #fff);
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .bottom-inner .tools-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
+
+    /* Increase input right padding to make room for both buttons */
+    .bottom .input { padding-right: 92px; }
+
+    /* Tools dropdown menu */
+    .tools-menu {
+      position: absolute;
+      right: 12px;
+      bottom: 54px;
+      /* Size wraps to the widest item */
+      width: max-content;
+      min-width: 0;
+      background: var(--search-input-background, rgba(255,255,255,0.9));
+      border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
+      border-radius: 10px;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.15);
+      backdrop-filter: blur(6px);
+      display: none;
+      z-index: 20;
+      overflow: hidden;
+    }
+    .tools-menu .tool-item {
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--search-input-text-color, #333);
+      cursor: pointer;
+      border: 0;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      white-space: nowrap; /* keep each item on one line */
+    }
+    .tools-menu .tool-item:hover {
+      background: var(--search-input-focus-background, rgba(255,255,255,1));
+    }
+
+    /* Message bubbles */
+    .msg {
+      max-width: 88%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      margin: 6px 0;
+      border: 1px solid var(--sp-msg-border, rgba(255,255,255,0.15));
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user {
+      margin-left: auto;
+      background: var(--sp-msg-user-bg, rgba(255,255,255,0.2));
+      color: var(--sp-text-color, #fff);
+    }
+    .msg.ai {
+      margin-right: auto;
+      background: var(--sp-msg-ai-bg, rgba(0,0,0,0.15));
+      color: var(--sp-text-color, #fff);
+    }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 8px 0;
+    }
+    .history-item {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid var(--sp-border-color, rgba(255,255,255,0.15));
+      border-radius: 10px;
+      background: rgba(0,0,0,0.08);
+    }
+    .history-item .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--sp-text-color, #fff);
+    }
+    .history-item .meta {
+      font-size: 11px;
+      opacity: 0.9;
+    }
+  </style>
+</head>
+
+<!-- ============================================================================
+     BODY - Main UI Structure
+     ============================================================================ -->
+<body>
+  <!-- Main container: Full-height flex layout with gradient background -->
+  <div class="container">
+    
+    <!-- ========== HEADER BAR ========== -->
+    <!-- Displays extension title and AI availability status -->
+    <div class="topbar">
+      <div class="title" id="sp-title"></div>        <!-- Title (set by config.js) -->
+      <div class="status" id="sp-status"></div>      <!-- AI status indicator -->
+    </div>
+    
+    <!-- (tool selector removed) -->
+    
+    <!-- ========== MESSAGE DISPLAY AREA ========== -->
+    <!-- Scrollable container where chat messages and history results appear -->
+    <div class="content" id="sp-content"></div>
+    
+    <!-- ========== INPUT SECTION ========== -->
+    <!-- Contains textarea, resize handle, and send button -->
+    <div class="bottom">
+      <div class="bottom-inner">
+        <!-- Drag handle for manual textarea resizing -->
+        <div class="resize-handle" id="sp-resize"></div>
+        
+        <!-- Main input field: Auto-grows and manually resizable -->
+        <textarea class="input" id="sp-input" placeholder="" rows="3"></textarea>
+        
+        <!-- Tools button -->
+        <button class="tools-btn" id="sp-tools" title="Tools">
+          <!-- simple list icon (three dots) -->
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="5" cy="12" r="2"/>
+            <circle cx="12" cy="12" r="2"/>
+            <circle cx="19" cy="12" r="2"/>
+          </svg>
+        </button>
+        
+        <!-- Send button with SVG icon -->
+        <button class="send-btn" id="sp-send" title="Send">
+          <!-- Paper airplane icon (send symbol) -->
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 12L21 3L14 21L11 13L3 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <!-- Tools dropdown menu -->
+        <div class="tools-menu" id="sp-tools-menu">
+          <button class="tool-item" data-tool="chat">General Chat</button>
+          <button class="tool-item" data-tool="history">@BrowserHistory</button>
+          <button class="tool-item" data-tool="bookmarks">@Bookmarks</button>
+          <button class="tool-item" data-tool="downloads">@Downloads</button>
+        </div>
+      </div>
+      
+    </div>
+    
+  </div>
+
+  <!-- ============================================================================
+       SCRIPTS - Configuration and Modular Architecture
+       ============================================================================ -->
+  <!-- Load configuration first -->
+  <script src="../core/config.js"></script>
+  
+  <!-- Load all modules as ES6 modules (external file to satisfy CSP) -->
+  <script type="module" src="./sidepanel.js"></script>
+  
+  <!-- Fallback for non-module browsers (load original) -->
+  <script nomodule src="./sidepanel-legacy.js"></script>
+</body>
+</html>
+
+
+
+
+
