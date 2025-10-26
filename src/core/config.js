@@ -110,7 +110,7 @@ const CONFIG = {
   // Centralizing text makes it easy to change wording or add translations
   // ============================================
   labels: {
-    title: 'Browser AI',                              // Main title shown in the header
+    title: 'iChrome',                              // Main title shown in the header
     hideButtonTitle: 'Hide Sidebar',                  // (legacy - used only in removed tabbar)
     searchPlaceholder: 'Type your message...',        // Hint text shown in empty input field
   },
@@ -136,6 +136,30 @@ const CONFIG = {
   animation: {
     duration: '0.3s',      // How long transitions take (0.3 seconds)
     easing: 'ease-out',    // Animation curve (starts fast, ends slow)
+  },
+
+  // ============================================
+  // ONBOARDING HELP (shown once on panel open)
+  // Configure the initial help message rendered in the chat area.
+  // Disappears smoothly after user's first message.
+  // ============================================
+  onboarding: {
+    enabled: true,
+    title: 'Welcome to iChrome AI Chat',
+    lines: [
+      'Introducing iChrome — your AI-enabled Chrome companion.',
+      'You can now chat intelligently with your browser data.',
+      'Search and interact with your History, Bookmarks, and Downloads directly.',
+      'Ask smart questions and get instant answers from your browsing activity.',
+      'Your privacy is our priority — all chats stay on your device, never leaving your browser.',
+      'Use built-in tools to enhance your experience:',
+      ' - @History to explore browsing history',
+      ' - @Bookmarks to find saved pages',
+      ' - @Downloads to view downloaded files',
+      'More intelligent features are coming soon — stay tuned!'
+    ],
+    // Milliseconds per character for typewriter animation
+    charDelayMs: 12,
   },
 
   // ============================================

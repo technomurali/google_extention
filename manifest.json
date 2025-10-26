@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Browser AI Assistant",
+  "name": "Intelligent Chrome (iChrome) Assistant",
   "version": "2.0",
-  "description": "AI-powered browser assistant with history, bookmarks, and downloads search",
+  "description": "AI-powered browser assistant with history, bookmarks, and downloads can act intelligently",
   "permissions": [
     "storage",
     "activeTab",
@@ -14,7 +14,7 @@
     "downloads"
   ],
   "action": {
-    "default_title": "Open AI Assistant",
+    "default_title": "iCrome Assistant",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "assets/icons/icon16.png",

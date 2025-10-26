@@ -59,6 +59,11 @@ let selectedTool = TOOLS.CHAT;
 let minInputHeight = 0;
 
 /**
+ * Onboarding help element reference
+ */
+let onboardingEl = null;
+
+/**
  * Initializes and caches all DOM element references
  * @throws {UIError} If critical elements are missing
  */
@@ -90,6 +95,7 @@ export function applyConfiguration() {
   const config = window.CONFIG || {};
   const labels = config.labels || {};
   const spacing = config.spacing || {};
+  const onboarding = config.onboarding || {};
 
   if (elements.title && labels.title) {
     elements.title.textContent = labels.title;
@@ -104,6 +110,11 @@ export function applyConfiguration() {
     const root = document.documentElement;
     root.style.setProperty('--tab-bar-header-padding', spacing.headerPadding || '12px 12px');
     root.style.setProperty('--tab-bar-content-padding', spacing.contentPadding || '10px 12px');
+  }
+
+  // Render onboarding help if enabled
+  if (onboarding.enabled) {
+    showOnboardingHelp(onboarding);
   }
 
   log.debug('Configuration applied to UI');
@@ -418,6 +429,71 @@ export function appendMessage(text, role) {
 }
 
 /**
+ * Shows onboarding help message block at the top of the chat area
+ * @param {{title?: string, lines?: string[], charDelayMs?: number}} config
+ */
+export function showOnboardingHelp(config = {}) {
+  if (!elements.content) return;
+  if (onboardingEl) return; // already shown
+
+  const cfg = {
+    title: config.title || 'Welcome',
+    lines: Array.isArray(config.lines) ? config.lines : [],
+    charDelayMs: typeof config.charDelayMs === 'number' ? config.charDelayMs : 12,
+  };
+
+  // Render as an AI message bubble to match chat
+  onboardingEl = document.createElement('div');
+  onboardingEl.className = `${SELECTORS.CLASS_MSG} ai`;
+  onboardingEl.setAttribute('role', 'log');
+  onboardingEl.setAttribute('aria-live', 'polite');
+  onboardingEl.style.opacity = '0';
+  onboardingEl.style.transform = 'translateY(4px)';
+  onboardingEl.style.transition = `opacity ${window.CONFIG?.animation?.duration || '0.3s'} ${window.CONFIG?.animation?.easing || 'ease-out'}, transform ${window.CONFIG?.animation?.duration || '0.3s'} ${window.CONFIG?.animation?.easing || 'ease-out'}`;
+
+  // Start with title, then type lines progressively
+  const fragments = [cfg.title, '', ...cfg.lines];
+  const fullText = fragments.join('\n');
+  onboardingEl.textContent = '';
+  elements.content.appendChild(onboardingEl);
+
+  // Fade in container
+  requestAnimationFrame(() => {
+    onboardingEl.style.opacity = '1';
+    onboardingEl.style.transform = 'translateY(0)';
+  });
+
+  // Typewriter effect
+  let idx = 0;
+  const delay = Math.max(0, cfg.charDelayMs);
+  function typeNext() {
+    if (!onboardingEl) return;
+    if (idx >= fullText.length) return;
+    onboardingEl.textContent += fullText[idx];
+    idx += 1;
+    setTimeout(typeNext, delay);
+  }
+  setTimeout(typeNext, delay);
+}
+
+/**
+ * Hides the onboarding help with smooth fade-out and removes it.
+ */
+export function hideOnboardingHelp() {
+  if (!onboardingEl) return;
+  const duration = window.CONFIG?.animation?.duration || '0.3s';
+  onboardingEl.style.opacity = '0';
+  onboardingEl.style.transform = 'translateY(4px)';
+  const ms = parseFloat(duration) * 1000 || 300;
+  setTimeout(() => {
+    if (onboardingEl && onboardingEl.parentElement) {
+      onboardingEl.parentElement.removeChild(onboardingEl);
+    }
+    onboardingEl = null;
+  }, ms);
+}
+
+/**
  * Scrolls content area to bottom
  */
 export function scrollToBottom() {
@@ -624,6 +700,8 @@ if (typeof module !== 'undefined' && module.exports) {
     cleanup,
     getInputElement,
     getSendButton,
+    showOnboardingHelp,
+    hideOnboardingHelp,
   };
 }
 

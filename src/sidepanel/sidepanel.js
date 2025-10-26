@@ -36,6 +36,7 @@ import {
   getInputElement,
   getSendButton,
   scrollToBottom,
+  hideOnboardingHelp,
 } from '../ui/ui.js';
 import { AIError, PermissionError } from '../core/errors.js';
 import { logger } from '../core/logger.js';
@@ -235,6 +236,9 @@ async function sendMessage() {
     log.debug('Empty message, ignoring');
     return;
   }
+
+  // Hide onboarding help after first user message
+  hideOnboardingHelp();
 
   // Display user message
   appendMessage(queryText, 'user');
