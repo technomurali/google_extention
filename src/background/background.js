@@ -83,7 +83,7 @@ async function enableSidePanelForTab(tabId) {
   try {
     await chrome.sidePanel.setOptions({
       tabId,
-      path: 'sidepanel.html',
+      path: 'src/sidepanel/sidepanel.html',
       enabled: true,
     });
     log.debug(`Side panel enabled for tab ${tabId}`);

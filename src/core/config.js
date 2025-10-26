@@ -111,7 +111,6 @@ const CONFIG = {
   // ============================================
   labels: {
     title: 'iChrome',                              // Main title shown in the header
-    hideButtonTitle: 'Hide Sidebar',                  // (legacy - used only in removed tabbar)
     searchPlaceholder: 'Type your message...',        // Hint text shown in empty input field
   },
 

@@ -101,7 +101,7 @@ export function initThemeSync() {
   updateTheme();
 
   // Listen for system theme changes
-  // Use modern addEventListener if available, fallback to addListener for older browsers
+  // Use modern addEventListener when available; fall back where required
   if (typeof mediaQuery.addEventListener === 'function') {
     mediaQuery.addEventListener('change', updateTheme);
     
@@ -110,7 +110,7 @@ export function initThemeSync() {
   } else if (typeof mediaQuery.addListener === 'function') {
     mediaQuery.addListener(updateTheme);
     
-    // Return cleanup function (legacy)
+    // Return cleanup function for addListener
     return () => mediaQuery.removeListener(updateTheme);
   }
 
