@@ -132,6 +132,7 @@ export const TOOLS = {
   HISTORY: 'history',
   BOOKMARKS: 'bookmarks',
   DOWNLOADS: 'downloads',
+  PAGE: 'page',
 };
 
 /**

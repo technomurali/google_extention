@@ -6,12 +6,16 @@
   "permissions": [
     "storage",
     "activeTab",
-    "sidePanel"
+    "sidePanel",
+    "scripting"
   ],
   "optional_permissions": [
     "history",
     "bookmarks",
     "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "action": {
     "default_title": "iCrome Assistant",

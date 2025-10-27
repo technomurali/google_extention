@@ -14,6 +14,7 @@
 // ============================================================================
 
 import { TOOLS, ERROR_MESSAGES, STATUS_MESSAGES } from '../core/constants.js';
+import { captureActivePage, chunkContent, pageState, setPageState, clearPageState, selectChunkById } from '../features/page-content/page-content.js';
 import { initializeAI, sendStreamingPrompt, sendPrompt, destroyAISession } from '../services/ai.js';
 import { searchHistory, extractQueryParameters } from '../features/history/history.js';
 import { searchBookmarks, convertBookmarksToResults } from '../features/bookmarks/bookmarks.js';
@@ -51,6 +52,10 @@ import {
   toggleSendStopButton,
   getSelectedContexts,
   clearSelectedContextsAfterSend,
+  // New UI helpers for @Page
+  renderChunkSelectionBubble,
+  showPagePill,
+  clearPagePill,
 } from '../ui/ui.js';
 import { AIError, PermissionError } from '../core/errors.js';
 import { logger } from '../core/logger.js';
@@ -231,6 +236,10 @@ async function routeMessage(queryText) {
       await handleDownloadsRequest(queryText);
       return;
 
+    case TOOLS.PAGE:
+      await handlePageRequest(queryText);
+      return;
+
     case TOOLS.CHAT:
     default:
       // Always treat as general chat when Chat tool is selected
@@ -275,7 +284,31 @@ async function sendMessage() {
   const tool = getSelectedTool();
   if (tool !== TOOLS.CHAT) {
     try {
-      await routeMessage(finalPrompt);
+      // For @Page, if a chunk is selected, wrap prompt and send as chat; otherwise trigger capture flow
+      if (tool === TOOLS.PAGE) {
+        if (pageState.selectedChunkId) {
+          const cfg = window.CONFIG?.pageContent || {};
+          const chunk = (pageState.chunks || []).find(c => c.id === pageState.selectedChunkId);
+          if (chunk) {
+            const templ = String(cfg.contextPromptTemplate || '').trim();
+            const wrapped = templ
+              .replace('{title}', String(pageState.title || ''))
+              .replace('{url}', String(pageState.url || ''))
+              .replace('{heading}', String(chunk.heading || ''))
+              .replace('{index}', String(chunk.index || ''))
+              .replace('{total}', String((pageState.chunks || []).length))
+              .replace('{content}', String(chunk.content || ''))
+              .replace('{question}', String(userInput || ''));
+            await handleChatRequest(wrapped);
+          } else {
+            await handlePageRequest(finalPrompt);
+          }
+        } else {
+          await handlePageRequest(finalPrompt);
+        }
+      } else {
+        await routeMessage(finalPrompt);
+      }
     } catch (error) {
       log.error('Message routing error:', error);
       const errorMessage = formatErrorForUser(error, 'An error occurred processing your request');
@@ -325,6 +358,72 @@ async function sendMessage() {
     currentAbortController = null;
     manualStopFlag = false;
     clearSelectedContextsAfterSend();
+  }
+}
+
+/**
+ * Handles @Page tool flow: capture, chunk, render selection, and set selected chunk
+ */
+async function handlePageRequest(_queryText) {
+  const cfg = window.CONFIG?.pageContent || {};
+
+  // 1) Announce capturing
+  const aiMsg = appendMessage(cfg.capturingMessage || 'Capturing page content...', 'ai');
+
+  try {
+    const payload = await captureActivePage();
+    if (!payload || !payload.text || !payload.text.trim()) {
+      aiMsg.textContent = cfg.errorNoContent || 'No text content found on this page.';
+      return;
+    }
+
+    // 2) Chunk
+    const chunks = chunkContent(payload, {
+      maxChunkChars: Number(cfg.maxChunkChars) || 12000,
+      overlapChars: Number(cfg.overlapChars) || 500,
+      minChunkChars: Number(cfg.minChunkChars) || 1000,
+    });
+
+    if (!chunks || chunks.length === 0) {
+      aiMsg.textContent = cfg.errorNoContent || 'No text content found on this page.';
+      return;
+    }
+
+    // 3) Save state
+    setPageState({
+      title: payload.title || '',
+      url: payload.url || '',
+      favicon: '',
+      chunks,
+      selectedChunkId: null,
+      timestamp: Date.now(),
+    });
+
+    // 4) Render selection list in a new AI bubble
+    renderChunkSelectionBubble({ title: pageState.title, url: pageState.url }, chunks, async (chunkId) => {
+      selectChunkById(chunkId);
+      const chosen = pageState.chunks.find(c => c.id === chunkId);
+      if (chosen) {
+        // Confirm selection in AI bubble
+        const confirmMsg = appendMessage('', 'ai');
+        const txt = String(cfg.chunkSelectedTemplate || 'Chunk {index} selected: "{heading}"')
+          .replace('{index}', String(chosen.index))
+          .replace('{heading}', String(chosen.heading));
+        confirmMsg.textContent = `${txt}\n${cfg.chunkInstructions || ''}`.trim();
+
+        // Show pill with page icon and heading
+        const label = `${cfg.icon || '📃'} ${chosen.heading} - ${pageState.title}`;
+        showPagePill(label, () => {
+          // Clear state when pill removed
+          clearPageState();
+          clearPagePill();
+        });
+      }
+    });
+
+  } catch (err) {
+    log.error('Page capture failed:', err);
+    aiMsg.textContent = cfg.errorCapture || 'Failed to capture page content. Please try again.';
   }
 }
 
@@ -571,6 +670,29 @@ function bindEventListeners() {
     cleanupSpeech();
     log.info('Side panel cleanup completed');
   });
+
+  // Start @Page capture immediately when selected (Option A)
+  document.addEventListener('tool-selected', (ev) => {
+    try {
+      const tool = ev && ev.detail && ev.detail.tool;
+      if (tool === TOOLS.PAGE) {
+        handlePageRequest('');
+      }
+    } catch {}
+  });
+
+  // Clear page context when tab changes (per config)
+  try {
+    const cfg = window.CONFIG?.pageContent || {};
+    if (cfg.clearOnTabSwitch && chrome && chrome.tabs && chrome.tabs.onActivated) {
+      chrome.tabs.onActivated.addListener(() => {
+        clearPageState();
+        try { clearPagePill(); } catch {}
+        const msg = String(cfg.clearedOnTabSwitchMessage || 'Page context cleared (tab switched).');
+        appendMessage(msg, 'ai');
+      });
+    }
+  } catch {}
 
   log.info('Event listeners bound');
 }

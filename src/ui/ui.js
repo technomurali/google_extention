@@ -37,6 +37,92 @@ import {
 } from '../core/utils.js';
 import { translateText } from '../services/translation.js';
 
+// Page pill state (UI only)
+let pagePill = null;
+
+export function renderChunkSelectionBubble(pageInfo, chunks, onSelect) {
+  const cfg = (window.CONFIG && window.CONFIG.pageContent) || {};
+  const body = appendMessage('', 'ai');
+  const frag = document.createDocumentFragment();
+
+  const title = document.createElement('div');
+  title.textContent = String(cfg.captureCompleteTemplate || 'Page captured: "{title}"').replace('{title}', pageInfo.title || 'Untitled');
+  frag.appendChild(title);
+
+  const header = document.createElement('div');
+  const headerText = String(cfg.chunksHeaderTemplate || 'Content divided into {count} chunks. Select one to analyze:')
+    .replace('{count}', String(chunks.length))
+    .replace('{chunks}', chunks.length === 1 ? 'chunk' : 'chunks');
+  header.textContent = headerText;
+  frag.appendChild(header);
+
+  const list = document.createElement('div');
+  list.style.display = 'flex';
+  list.style.flexDirection = 'column';
+  list.style.gap = '6px';
+
+  chunks.forEach((c) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'send-btn';
+    btn.style.alignSelf = 'flex-start';
+    btn.textContent = String(cfg.chunkButtonTemplate || 'Chunk {index}: {heading} ({size})')
+      .replace('{index}', String(c.index))
+      .replace('{heading}', c.heading)
+      .replace('{size}', c.size);
+    btn.addEventListener('click', () => {
+      if (typeof onSelect === 'function') onSelect(c.id);
+    });
+    list.appendChild(btn);
+  });
+  frag.appendChild(list);
+
+  const foot = document.createElement('div');
+  foot.style.marginTop = '6px';
+  foot.textContent = String(cfg.chunkInstructions || 'Click a chunk to start asking questions about that section.');
+  frag.appendChild(foot);
+
+  body.innerHTML = '';
+  body.appendChild(frag);
+  return body;
+}
+
+export function showPagePill(label, onClear) {
+  const pillsRow = document.getElementById(SELECTORS.CONTEXT_PILLS);
+  if (!pillsRow) return null;
+  // Clear existing page pill
+  if (pagePill && pagePill.parentElement) pagePill.parentElement.removeChild(pagePill);
+
+  const pill = document.createElement('span');
+  pill.className = 'pill';
+  pill.title = label;
+  pill.textContent = label;
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'remove';
+  removeBtn.setAttribute('aria-label', 'Remove page context');
+  removeBtn.innerHTML = '×';
+  removeBtn.onclick = () => { if (typeof onClear === 'function') onClear(); };
+  pill.appendChild(document.createTextNode(' '));
+  pill.appendChild(removeBtn);
+
+  // Insert before actions
+  const actions = pillsRow.querySelector('.actions');
+  if (actions) pillsRow.insertBefore(pill, actions);
+  else pillsRow.appendChild(pill);
+
+  pillsRow.style.display = 'flex';
+  pagePill = pill;
+  return pill;
+}
+
+export function clearPagePill() {
+  if (pagePill && pagePill.parentElement) {
+    pagePill.parentElement.removeChild(pagePill);
+  }
+  pagePill = null;
+}
+
 const log = logger.ui;
 
 /**
@@ -597,6 +683,10 @@ export function setSelectedTool(tool) {
   }
 
   log.debug('Tool selected:', tool);
+  try {
+    const ev = new CustomEvent('tool-selected', { bubbles: true, composed: true, detail: { tool } });
+    document.dispatchEvent(ev);
+  } catch {}
 }
 
 /**

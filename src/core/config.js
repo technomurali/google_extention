@@ -177,6 +177,42 @@ const CONFIG = {
   },
 
   // ============================================
+  // PAGE CONTENT (@Page)
+  // Configuration for active page capture, chunking, and UI labels
+  // ============================================
+  pageContent: {
+    enabled: true,
+    toolLabel: '@Page',
+    icon: '📃',            // UI icon for page-related pills and messages
+    pillIcon: '📑',
+
+    // Chunking settings (aim for ~3k tokens per chunk; Gemini Nano ~4k window)
+    maxChunkChars: 12000,  // hard cap per chunk (characters)
+    overlapChars: 500,     // small overlap for continuity
+    minChunkChars: 1000,   // avoid tiny chunks
+
+    // UI labels/templates
+    capturingMessage: '📃 Capturing page content...',
+    captureCompleteTemplate: '📃 Page captured: "{title}"',
+    chunksHeaderTemplate: '📊 Content divided into {count} chunks. Select one to analyze:',
+    chunkButtonTemplate: '📑 Chunk {index}: {heading} ({size})',
+    chunkSelectedTemplate: '✅ Chunk {index} selected: "{heading}"',
+    chunkInstructions: 'Click a chunk to start asking questions about that section.',
+    clearedOnTabSwitchMessage: 'Page context cleared (tab switched).',
+
+    // Error messages
+    errorCapture: 'Failed to capture page content. Please try again.',
+    errorNoContent: 'No text content found on this page.',
+    errorPermission: 'Permission denied. Please allow access to the current page.',
+
+    // AI prompt template (strictly answer from section content)
+    contextPromptTemplate: `You are analyzing a specific section from a web page. Answer the user's question based ONLY on this section. If the answer is not in this section, respond: "I cannot find that information in this section. This section covers: {heading}. You might want to try another chunk."\n\nPAGE: {title}\nURL: {url}\nSECTION: {heading} (Part {index} of {total})\n\nCONTENT START\n{content}\nCONTENT END\n\nUSER QUESTION: {question}`,
+
+    // Behavior
+    clearOnTabSwitch: true,
+  },
+
+  // ============================================
   // TRANSLATION
   // Configuration for in-bubble translation feature
   // ============================================
