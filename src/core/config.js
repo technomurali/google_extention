@@ -177,6 +177,46 @@ const CONFIG = {
   },
 
   // ============================================
+  // TRANSLATION
+  // Configuration for in-bubble translation feature
+  // ============================================
+  translation: {
+    enabled: true,
+    // Autodetect source language by default
+    defaultSourceLanguage: 'auto',
+    // Default fallback display language name when needed
+    defaultLanguage: 'en',
+    // How many languages to show before search/scroll
+    maxDisplayLanguages: 5,
+    // Show language codes next to names in the list
+    showLanguageCodes: true,
+    // How many recently used languages to pin at the top
+    recentLimit: 3,
+    // Animation speed (milliseconds per character) for translated text appearance
+    animationDelayMs: 8,
+    // Configurable language list (add or remove freely)
+    languages: [
+      { code: 'en', name: 'English' },
+      { code: 'es', name: 'Spanish' },
+      { code: 'fr', name: 'French' },
+      { code: 'ja', name: 'Japanese' },
+      { code: 'pt', name: 'Portuguese' },
+      // Additional common languages (examples; safe to keep/edit)
+      { code: 'de', name: 'German' },
+      { code: 'zh', name: 'Chinese' },
+      { code: 'hi', name: 'Hindi' },
+      { code: 'ar', name: 'Arabic' },
+      { code: 'te', name: 'Telugu' },
+    ],
+    labels: {
+      searchPlaceholder: 'Search languages...',
+      showOriginal: 'Show Original',
+      translating: 'Translating...',
+      translationError: 'Translation failed',
+    },
+  },
+
+  // ============================================
   // Z-INDEX (Layer Priority)
   // Controls which elements appear on top of others
   // Higher numbers = closer to user (on top)

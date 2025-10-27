@@ -113,9 +113,29 @@ JAVASCRIPT:
       align-items: center;
       justify-content: center;
     }
+    /* Translate button mirrors minimize button styling */
+    .msg .msg-translate-btn {
+      position: absolute;
+      top: 6px;
+      right: 42px; /* placed left of minimize button */
+      width: 30px;
+      height: 30px;
+      appearance: none;
+      border: 1px solid var(--sp-button-border, rgba(255,255,255,0.25));
+      background: var(--sp-button-bg, rgba(255,255,255,0.15));
+      color: var(--sp-button-color, #fff);
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px; /* for language code badge */
+      font-weight: 600;
+    }
     .msg .msg-minimize-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
+    .msg .msg-translate-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
     /* Ensure AI bubble content starts below and left of the button */
-    .msg.ai { padding-top: 36px; padding-right: 40px; }
+    .msg.ai { padding-top: 36px; padding-right: 80px; }
     .msg.ai.minimized .msg-body {
       max-height: 55px;
       overflow: hidden;
@@ -273,6 +293,62 @@ JAVASCRIPT:
     }
     .tools-menu .tool-item:hover {
       background: var(--search-input-focus-background, rgba(255,255,255,1));
+    }
+
+    /* Translate dropdown menu (within each bubble) */
+    .msg .msg-translate-menu {
+      position: absolute;
+      right: 6px;
+      top: 42px; /* below the buttons */
+      width: 220px;
+      background: var(--search-input-background, rgba(255,255,255,0.9));
+      border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
+      border-radius: 10px;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.15);
+      backdrop-filter: blur(6px);
+      display: none;
+      z-index: 25;
+      overflow: hidden;
+    }
+    .msg .msg-translate-menu .translate-header {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
+      background: var(--search-input-focus-background, rgba(255,255,255,1));
+    }
+    .msg .msg-translate-menu .translate-search {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border: 1px solid var(--sp-input-border, rgba(0,0,0,0.1));
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--search-input-text-color, #333);
+      background: var(--search-input-background, rgba(255,255,255,0.9));
+      outline: none;
+    }
+    .msg .msg-translate-menu .translate-list {
+      max-height: 260px;
+      overflow: auto;
+      padding: 6px 0;
+    }
+    .msg .msg-translate-menu .translate-item {
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--search-input-text-color, #333);
+      cursor: pointer;
+      border: 0;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      white-space: nowrap;
+    }
+    .msg .msg-translate-menu .translate-item:hover {
+      background: var(--search-input-focus-background, rgba(255,255,255,1));
+    }
+    .msg .msg-translate-menu .translate-divider {
+      height: 1px;
+      background: var(--sp-input-border, rgba(0,0,0,0.08));
+      margin: 4px 0;
     }
 
     /* Message bubbles */

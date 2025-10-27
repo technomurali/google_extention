@@ -181,6 +181,7 @@ export const STATUS_MESSAGES = {
   LOADING_BOOKMARKS: 'Loading bookmarks…',
   LOADING_DOWNLOADS: 'Loading downloads…',
   PERMISSION_GRANTED_SEARCHING: 'Permission granted. Searching…',
+  TRANSLATING: 'Translating…',
   
   // Button labels
   GRANT_HISTORY_ACCESS: 'Grant history access',
@@ -211,6 +212,16 @@ export const SELECTORS = {
   SEND_BUTTON: 'sp-send',
   TOOLS_BUTTON: 'sp-tools',
   TOOLS_MENU: 'sp-tools-menu',
+  
+  // Translate UI within message bubbles
+  CLASS_TRANSLATE_BTN: 'msg-translate-btn',
+  CLASS_TRANSLATE_MENU: 'msg-translate-menu',
+  CLASS_TRANSLATE_SEARCH: 'translate-search',
+  CLASS_TRANSLATE_ITEM: 'translate-item',
+  CLASS_TRANSLATE_HEADER: 'translate-header',
+  CLASS_TRANSLATE_RECENT: 'translate-recent',
+  CLASS_TRANSLATE_DIVIDER: 'translate-divider',
+  CLASS_TRANSLATED_BADGE: 'translated-badge',
   
   // Context selection UI
   CONTEXT_PILLS: 'sp-context-pills',

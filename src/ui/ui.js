@@ -35,6 +35,7 @@ import {
   clamp,
   debounce,
 } from '../core/utils.js';
+import { translateText } from '../services/translation.js';
 
 const log = logger.ui;
 
@@ -69,6 +70,76 @@ let onboardingEl = null;
  */
 let selectedContexts = [];
 let ctxAddBtnEl = null;
+
+// Translation recent memory (session-scoped)
+let recentLanguages = [];
+
+function getConfigTranslation() {
+  const cfg = window.CONFIG?.translation || {};
+  return {
+    enabled: cfg.enabled !== false,
+    defaultSourceLanguage: String(cfg.defaultSourceLanguage || 'auto'),
+    defaultLanguage: String(cfg.defaultLanguage || 'en'),
+    maxDisplayLanguages: Number(cfg.maxDisplayLanguages) || 5,
+    showLanguageCodes: cfg.showLanguageCodes !== false,
+    recentLimit: Number(cfg.recentLimit) || 3,
+    animationDelayMs: Number(cfg.animationDelayMs) >= 0 ? Number(cfg.animationDelayMs) : 8,
+    languages: Array.isArray(cfg.languages) ? cfg.languages : [
+      { code: 'en', name: 'English' },
+      { code: 'es', name: 'Spanish' },
+      { code: 'fr', name: 'French' },
+      { code: 'ja', name: 'Japanese' },
+      { code: 'pt', name: 'Portuguese' },
+    ],
+    labels: Object.assign({
+      searchPlaceholder: 'Search languages...',
+      showOriginal: 'Show Original',
+      translating: 'Translating...',
+      translationError: 'Translation failed',
+    }, cfg.labels || {}),
+  };
+}
+
+function rememberRecentLanguage(code) {
+  if (!code) return;
+  const cfg = getConfigTranslation();
+  recentLanguages = [code.toLowerCase(), ...recentLanguages.filter(c => c.toLowerCase() !== code.toLowerCase())];
+  if (recentLanguages.length > cfg.recentLimit) recentLanguages.length = cfg.recentLimit;
+}
+
+function hideAllTranslateMenus() {
+  const openMenus = elements.content ? elements.content.querySelectorAll(`.${SELECTORS.CLASS_TRANSLATE_MENU}`) : [];
+  openMenus.forEach((menu) => { menu.style.display = 'none'; });
+}
+
+/**
+ * Animates text appearance character by character (typewriter effect)
+ * @param {HTMLElement} element - Target element to update
+ * @param {string} text - Text to animate
+ * @param {number} delayMs - Delay between characters in milliseconds
+ * @returns {Promise<void>}
+ */
+async function animateTextAppearance(element, text, delayMs = 8) {
+  return new Promise((resolve) => {
+    element.textContent = '';
+    let idx = 0;
+    const chars = String(text || '');
+    
+    function typeNext() {
+      if (idx >= chars.length) {
+        scrollToBottom();
+        resolve();
+        return;
+      }
+      element.textContent += chars[idx];
+      idx += 1;
+      scrollToBottom();
+      setTimeout(typeNext, delayMs);
+    }
+    
+    typeNext();
+  });
+}
 
 function getConfigContext() {
   const cfg = window.CONFIG?.contextSelection || {};
@@ -336,6 +407,23 @@ export function initializeElements() {
     elements.content.addEventListener('scroll', () => { hideCtxAddButton(); }, { signal: abortController.signal });
     window.addEventListener('resize', () => { hideCtxAddButton(); }, { signal: abortController.signal });
     updateContextPillsUI();
+  } catch {}
+
+  // Keyboard shortcut: Ctrl+T toggles last AI bubble's translate menu
+  try {
+    document.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && (event.key === 't' || event.key === 'T')) {
+        event.preventDefault();
+        const bubbles = elements.content.querySelectorAll(`.${SELECTORS.CLASS_MSG}.${SELECTORS.CLASS_AI}`);
+        const last = bubbles[bubbles.length - 1];
+        if (!last) return;
+        // Ensure translate button exists
+        const btn = last.querySelector(`.${SELECTORS.CLASS_TRANSLATE_BTN}`);
+        if (btn) {
+          btn.click();
+        }
+      }
+    }, { signal: abortController.signal });
   } catch {}
 
   log.info('UI elements initialized successfully');
@@ -680,9 +768,194 @@ export function appendMessage(text, role) {
   if (typeof text === 'string') body.textContent = text;
   bubble.appendChild(body);
 
-  // Add per-bubble minimize button for AI messages
+  // Add per-bubble controls for AI messages (translate + minimize)
   if (role === 'ai') {
     bubble.style.position = 'relative';
+    // Translate button
+    try {
+      const tcfg = getConfigTranslation();
+      if (tcfg.enabled) {
+        const tbtn = document.createElement('button');
+        tbtn.className = SELECTORS.CLASS_TRANSLATE_BTN;
+        tbtn.title = 'Translate';
+        tbtn.setAttribute('aria-label', 'Translate');
+        // Globe icon default
+        tbtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 2c1.85 0 3.53.63 4.87 1.69H7.13A7.96 7.96 0 0112 4zm-6.32 3h12.64c.43.6.78 1.26 1.03 1.97H4.65c.25-.71.6-1.37 1.03-1.97zM4.1 10h15.8c.07.33.1.66.1 1s-.03.67-.1 1H4.1A7.96 7.96 0 014 11c0-.34.03-.67.1-1zm.55 4h14.7a7.97 7.97 0 01-1.03 1.97H5.68A7.97 7.97 0 014.65 14zM7.13 18h9.74A7.96 7.96 0 0112 20a7.96 7.96 0 01-4.87-2z"/></svg>';
+
+        const menu = document.createElement('div');
+        menu.className = SELECTORS.CLASS_TRANSLATE_MENU;
+        // Build menu content lazily on open
+
+        function buildAndShowMenu() {
+          // Rebuild each time to reflect recents/search
+          menu.innerHTML = '';
+          const cfg = getConfigTranslation();
+          const header = document.createElement('div');
+          header.className = SELECTORS.CLASS_TRANSLATE_HEADER;
+          const search = document.createElement('input');
+          search.className = SELECTORS.CLASS_TRANSLATE_SEARCH;
+          search.type = 'text';
+          search.placeholder = cfg.labels.searchPlaceholder;
+          header.appendChild(search);
+          menu.appendChild(header);
+
+          const list = document.createElement('div');
+          list.className = 'translate-list';
+
+          function makeItem(label, code, isActive = false) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = SELECTORS.CLASS_TRANSLATE_ITEM;
+            btn.dataset.lang = code;
+            btn.textContent = label + (isActive ? ' ✓' : '');
+            return btn;
+          }
+
+          function renderList(filter = '') {
+            list.innerHTML = '';
+            const f = String(filter || '').toLowerCase();
+
+            // Recent section
+            if (!f && recentLanguages.length > 0) {
+              const recentHeader = document.createElement('div');
+              recentHeader.className = SELECTORS.CLASS_TRANSLATE_HEADER;
+              recentHeader.textContent = 'Recent';
+              list.appendChild(recentHeader);
+              const uniqueRecents = recentLanguages.filter(code => cfg.languages.some(l => l.code.toLowerCase() === code.toLowerCase()));
+              uniqueRecents.slice(0, cfg.recentLimit).forEach(code => {
+                const lang = cfg.languages.find(l => l.code.toLowerCase() === code.toLowerCase());
+                if (!lang) return;
+                const label = cfg.showLanguageCodes ? `${lang.name} (${lang.code})` : lang.name;
+                const isActive = (bubble.dataset.currentLang || '') === lang.code;
+                list.appendChild(makeItem(label, lang.code, isActive));
+              });
+              const div = document.createElement('div');
+              div.className = SELECTORS.CLASS_TRANSLATE_DIVIDER;
+              list.appendChild(div);
+            }
+
+            // Main list: filter or default slice
+            let langs = cfg.languages;
+            if (f) {
+              langs = cfg.languages.filter(l => l.name.toLowerCase().includes(f) || l.code.toLowerCase().includes(f));
+            } else {
+              langs = cfg.languages.slice(0, Math.max(1, cfg.maxDisplayLanguages));
+            }
+            langs.forEach((l) => {
+              const label = cfg.showLanguageCodes ? `${l.name} (${l.code})` : l.name;
+              const isActive = (bubble.dataset.currentLang || '') === l.code;
+              list.appendChild(makeItem(label, l.code, isActive));
+            });
+
+            // Show Original if currently translated
+            const hasOriginal = typeof bubble.dataset.originalText === 'string' && (bubble.dataset.currentLang || '') !== '';
+            if (hasOriginal) {
+              const div2 = document.createElement('div');
+              div2.className = SELECTORS.CLASS_TRANSLATE_DIVIDER;
+              list.appendChild(div2);
+              const originalBtn = document.createElement('button');
+              originalBtn.type = 'button';
+              originalBtn.className = SELECTORS.CLASS_TRANSLATE_ITEM;
+              originalBtn.dataset.action = 'show-original';
+              originalBtn.textContent = cfg.labels.showOriginal;
+              list.appendChild(originalBtn);
+            }
+          }
+
+          renderList('');
+          menu.appendChild(list);
+
+          // Event: filter on input
+          search.addEventListener('input', () => {
+            renderList(search.value);
+          }, { signal: abortController.signal });
+
+          // Event: click on list items
+          list.addEventListener('click', async (ev) => {
+            const target = ev.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target.dataset.action === 'show-original') {
+              if (typeof bubble.dataset.originalText === 'string') {
+                const cfg2 = getConfigTranslation();
+                // Animate the original text restoration
+                await animateTextAppearance(body, bubble.dataset.originalText, cfg2.animationDelayMs);
+                bubble.dataset.currentLang = '';
+                // Reset button icon
+                tbtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 2c1.85 0 3.53.63 4.87 1.69H7.13A7.96 7.96 0 0112 4zm-6.32 3h12.64c.43.6.78 1.26 1.03 1.97H4.65c.25-.71.6-1.37 1.03-1.97zM4.1 10h15.8c.07.33.1.66.1 1s-.03.67-.1 1H4.1A7.96 7.96 0 014 11c0-.34.03-.67.1-1zm.55 4h14.7a7.97 7.97 0 01-1.03 1.97H5.68A7.97 7.97 0 014.65 14zM7.13 18h9.74A7.96 7.96 0 0112 20a7.96 7.96 0 01-4.87-2z"/></svg>';
+              }
+              menu.style.display = 'none';
+              return;
+            }
+            const code = target.dataset.lang;
+            if (!code) return;
+
+            // Start translation
+            log.info(`Translation requested: ${code}`);
+            const cfg2 = getConfigTranslation();
+            // Cache original once
+            if (typeof bubble.dataset.originalText !== 'string') {
+              bubble.dataset.originalText = String(body.textContent || '');
+            }
+            const orig = String(bubble.dataset.originalText || body.textContent || '');
+            log.debug(`Original text length: ${orig.length}`);
+            // Show translating state
+            const prev = String(body.textContent || '');
+            body.textContent = cfg2.labels.translating;
+            tbtn.disabled = true;
+            try {
+              log.debug(`Calling translateText for ${code}`);
+              const res = await translateText(orig, { sourceLanguage: cfg2.defaultSourceLanguage, targetLanguage: code });
+              log.info(`Translation result:`, res);
+              if (res && res.ok) {
+                // Animate the translated text appearance
+                await animateTextAppearance(body, res.text, cfg2.animationDelayMs);
+                bubble.dataset.currentLang = code;
+                // Update button to show language code
+                tbtn.textContent = String(code || '').toUpperCase();
+                rememberRecentLanguage(code);
+                log.info(`Translation successful to ${code}`);
+              } else {
+                log.warn(`Translation failed:`, res?.error);
+                body.textContent = prev; // restore
+                tbtn.title = cfg2.labels.translationError;
+              }
+            } catch (err) {
+              log.error(`Translation exception:`, err);
+              body.textContent = prev;
+              tbtn.title = cfg2.labels.translationError;
+            } finally {
+              tbtn.disabled = false;
+              menu.style.display = 'none';
+            }
+          }, { signal: abortController.signal });
+
+          hideAllTranslateMenus();
+          menu.style.display = 'block';
+        }
+
+        tbtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          // Toggle
+          const isOpen = menu.style.display === 'block';
+          if (isOpen) {
+            menu.style.display = 'none';
+          } else {
+            buildAndShowMenu();
+          }
+        }, { signal: abortController.signal });
+
+        // Close when clicking outside this bubble
+        document.addEventListener('click', (ev) => {
+          const target = ev.target;
+          if (!bubble.contains(target)) {
+            menu.style.display = 'none';
+          }
+        }, { signal: abortController.signal });
+
+        bubble.appendChild(tbtn);
+        bubble.appendChild(menu);
+      }
+    } catch {}
     const btn = document.createElement('button');
     btn.className = 'msg-minimize-btn';
     btn.title = 'Minimize';
