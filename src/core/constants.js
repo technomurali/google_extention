@@ -133,6 +133,7 @@ export const TOOLS = {
   BOOKMARKS: 'bookmarks',
   DOWNLOADS: 'downloads',
   PAGE: 'page',
+  CHROMEPAD: 'chromepad',
 };
 
 /**

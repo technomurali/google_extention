@@ -60,6 +60,7 @@ import {
 import { AIError, PermissionError } from '../core/errors.js';
 import { logger } from '../core/logger.js';
 import { formatErrorForUser } from '../core/errors.js';
+import { handleChromePadRequest, handleChromePadSelected } from '../features/chromepad/chromepad.js';
 
 const log = logger.create('SidePanel');
 
@@ -238,6 +239,10 @@ async function routeMessage(queryText) {
 
     case TOOLS.PAGE:
       await handlePageRequest(queryText);
+      return;
+
+    case TOOLS.CHROMEPAD:
+      await handleChromePadRequest(queryText);
       return;
 
     case TOOLS.CHAT:
@@ -677,6 +682,8 @@ function bindEventListeners() {
       const tool = ev && ev.detail && ev.detail.tool;
       if (tool === TOOLS.PAGE) {
         handlePageRequest('');
+      } else if (tool === TOOLS.CHROMEPAD) {
+        handleChromePadSelected();
       }
     } catch {}
   });
