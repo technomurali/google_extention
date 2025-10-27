@@ -37,6 +37,7 @@ import {
   getSendButton,
   scrollToBottom,
   hideOnboardingHelp,
+  toggleSendStopButton,
 } from '../ui/ui.js';
 import { AIError, PermissionError } from '../core/errors.js';
 import { logger } from '../core/logger.js';
@@ -49,6 +50,11 @@ let lastHistoryContext = {
   exactDate: null,
   days: null,
 };
+
+// Generation state for chat streaming
+let isGenerating = false;
+let currentAbortController = null;
+let manualStopFlag = false; // Fallback if AbortSignal isn't supported
 
 /**
  * Handles history query requests
@@ -170,24 +176,19 @@ async function handleDownloadsRequest(queryText) {
  * @param {string} queryText - User's message
  */
 async function handleChatRequest(queryText) {
+  // This function is kept for non-controlled routes; the controlled flow is in sendMessage
   try {
-    // Try streaming first
     const stream = await sendStreamingPrompt(queryText);
     const aiMessageElement = appendMessage('', 'ai');
-
     for await (const chunk of stream) {
       aiMessageElement.textContent += chunk;
       scrollToBottom();
     }
-  } catch (streamError) {
-    log.warn('Streaming failed, trying non-streaming:', streamError);
-
+  } catch (err) {
     try {
-      // Fallback to non-streaming
       const response = await sendPrompt(queryText);
       appendMessage(response, 'ai');
     } catch (promptError) {
-      log.error('Chat request failed:', promptError);
       const errorMsg = formatErrorForUser(promptError, ERROR_MESSAGES.AI_UNAVAILABLE);
       appendMessage(errorMsg, 'ai');
     }
@@ -243,12 +244,59 @@ async function sendMessage() {
   // Display user message
   appendMessage(queryText, 'user');
 
+  // If not chat tool, route as usual
+  const tool = getSelectedTool();
+  if (tool !== TOOLS.CHAT) {
+    try {
+      await routeMessage(queryText);
+    } catch (error) {
+      log.error('Message routing error:', error);
+      const errorMessage = formatErrorForUser(error, 'An error occurred processing your request');
+      appendMessage(errorMessage, 'ai');
+    }
+    return;
+  }
+
+  // Controlled chat flow with cancel support
+  const inputElement = getInputElement();
+  const aiMessageElement = appendMessage('', 'ai');
+
+  isGenerating = true;
+  manualStopFlag = false;
+  currentAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  toggleSendStopButton(true);
+  if (inputElement) inputElement.disabled = true;
+
   try {
-    await routeMessage(queryText);
-  } catch (error) {
-    log.error('Message routing error:', error);
-    const errorMessage = formatErrorForUser(error, 'An error occurred processing your request');
-    appendMessage(errorMessage, 'ai');
+    // Try streaming with AbortSignal when available
+    const options = currentAbortController ? { signal: currentAbortController.signal } : {};
+    const stream = await sendStreamingPrompt(queryText, options);
+
+    for await (const chunk of stream) {
+      if (manualStopFlag) break;
+      aiMessageElement.textContent += chunk;
+      scrollToBottom();
+    }
+  } catch (streamError) {
+    // If aborted, do not treat as error
+    const aborted = (currentAbortController && currentAbortController.signal && currentAbortController.signal.aborted) || manualStopFlag;
+    if (!aborted) {
+      log.warn('Streaming failed, trying non-streaming:', streamError);
+      try {
+        const response = await sendPrompt(queryText);
+        aiMessageElement.textContent = response;
+      } catch (promptError) {
+        log.error('Chat request failed:', promptError);
+        const errorMsg = formatErrorForUser(promptError, ERROR_MESSAGES.AI_UNAVAILABLE);
+        aiMessageElement.textContent = errorMsg;
+      }
+    }
+  } finally {
+    isGenerating = false;
+    toggleSendStopButton(false);
+    if (inputElement) inputElement.disabled = false;
+    currentAbortController = null;
+    manualStopFlag = false;
   }
 }
 
@@ -266,16 +314,28 @@ function bindEventListeners() {
   // Auto-grow on input
   inputElement.addEventListener('input', autoGrowTextarea);
 
-  // Send on Enter (Shift+Enter for new line)
+  // Send on Enter (Shift+Enter for new line). Block while generating
   inputElement.addEventListener('keydown', async (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      await sendMessage();
+      if (!isGenerating) {
+        await sendMessage();
+      }
     }
   });
 
-  // Send button click
-  sendButton.addEventListener('click', sendMessage);
+  // Send/Stop button click
+  sendButton.addEventListener('click', async () => {
+    if (isGenerating) {
+      // Stop generation
+      try {
+        if (currentAbortController) currentAbortController.abort();
+        manualStopFlag = true;
+      } catch {}
+    } else {
+      await sendMessage();
+    }
+  });
 
   // Cleanup on window unload
   window.addEventListener('beforeunload', () => {

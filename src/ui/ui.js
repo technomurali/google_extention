@@ -680,6 +680,29 @@ export function getSendButton() {
   return elements.sendButton;
 }
 
+/**
+ * Toggles the send button between Send and Stop modes
+ * - When showStop is true: shows a stop icon/state and label
+ * - When false: restores the original send icon/state and label
+ * @param {boolean} showStop
+ */
+export function toggleSendStopButton(showStop) {
+  if (!elements.sendButton) return;
+
+  if (showStop) {
+    elements.sendButton.title = 'Stop generating';
+    elements.sendButton.setAttribute('aria-label', 'Stop generating');
+    elements.sendButton.classList.add('stop-mode');
+    // Minimal inline SVG to avoid external dependencies
+    elements.sendButton.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  } else {
+    elements.sendButton.title = 'Send';
+    elements.sendButton.setAttribute('aria-label', 'Send message');
+    elements.sendButton.classList.remove('stop-mode');
+    elements.sendButton.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12L21 3L14 21L11 13L3 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+}
+
 // For non-module script compatibility
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {

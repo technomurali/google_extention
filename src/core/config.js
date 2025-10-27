@@ -158,7 +158,7 @@ const CONFIG = {
       'More intelligent features are coming soon — stay tuned!'
     ],
     // Milliseconds per character for typewriter animation
-    charDelayMs: 12,
+    charDelayMs: 5,
   },
 
   // ============================================
