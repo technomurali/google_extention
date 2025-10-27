@@ -38,6 +38,8 @@ import {
   scrollToBottom,
   hideOnboardingHelp,
   toggleSendStopButton,
+  getSelectedContexts,
+  clearSelectedContextsAfterSend,
 } from '../ui/ui.js';
 import { AIError, PermissionError } from '../core/errors.js';
 import { logger } from '../core/logger.js';
@@ -231,28 +233,38 @@ async function routeMessage(queryText) {
  * Coordinates input retrieval, routing, and error handling
  */
 async function sendMessage() {
-  const queryText = getAndClearInput();
+  const userInput = getAndClearInput();
 
-  if (!queryText) {
+  if (!userInput) {
     log.debug('Empty message, ignoring');
     return;
   }
+
+  // Build final prompt with labeled contexts
+  const cfg = window.CONFIG?.contextSelection || {};
+  const labelPrefix = String(cfg.contextLabelPrefix || 'Context');
+  const contexts = getSelectedContexts();
+  const labeled = contexts.map((c, idx) => `${labelPrefix} ${idx + 1}: "${c.text}"`);
+  const header = labeled.length ? labeled.join('\n---\n') + '\n\n' : '';
+  const finalPrompt = `${header}User: ${userInput}`;
 
   // Hide onboarding help after first user message
   hideOnboardingHelp();
 
   // Display user message
-  appendMessage(queryText, 'user');
+  appendMessage(userInput, 'user');
 
   // If not chat tool, route as usual
   const tool = getSelectedTool();
   if (tool !== TOOLS.CHAT) {
     try {
-      await routeMessage(queryText);
+      await routeMessage(finalPrompt);
     } catch (error) {
       log.error('Message routing error:', error);
       const errorMessage = formatErrorForUser(error, 'An error occurred processing your request');
       appendMessage(errorMessage, 'ai');
+    } finally {
+      clearSelectedContextsAfterSend();
     }
     return;
   }
@@ -268,9 +280,8 @@ async function sendMessage() {
   if (inputElement) inputElement.disabled = true;
 
   try {
-    // Try streaming with AbortSignal when available
     const options = currentAbortController ? { signal: currentAbortController.signal } : {};
-    const stream = await sendStreamingPrompt(queryText, options);
+    const stream = await sendStreamingPrompt(finalPrompt, options);
 
     for await (const chunk of stream) {
       if (manualStopFlag) break;
@@ -278,12 +289,11 @@ async function sendMessage() {
       scrollToBottom();
     }
   } catch (streamError) {
-    // If aborted, do not treat as error
     const aborted = (currentAbortController && currentAbortController.signal && currentAbortController.signal.aborted) || manualStopFlag;
     if (!aborted) {
       log.warn('Streaming failed, trying non-streaming:', streamError);
       try {
-        const response = await sendPrompt(queryText);
+        const response = await sendPrompt(finalPrompt);
         aiMessageElement.textContent = response;
       } catch (promptError) {
         log.error('Chat request failed:', promptError);
@@ -297,6 +307,7 @@ async function sendMessage() {
     if (inputElement) inputElement.disabled = false;
     currentAbortController = null;
     manualStopFlag = false;
+    clearSelectedContextsAfterSend();
   }
 }
 

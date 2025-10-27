@@ -65,6 +65,251 @@ let onboardingEl = null;
 // Per-bubble minimize is used; no global content minimize state
 
 /**
+ * Context selection state
+ */
+let selectedContexts = [];
+let ctxAddBtnEl = null;
+
+function getConfigContext() {
+  const cfg = window.CONFIG?.contextSelection || {};
+  return {
+    maxItems: Number(cfg.maxItems) || 5,
+    buttonLabel: String(cfg.buttonLabel || 'Ask iChrome'),
+    pillClearAllLabel: String(cfg.pillClearAllLabel || 'Clear all'),
+    pillCounterTemplate: String(cfg.pillCounterTemplate || '{count}/{max}'),
+    contextLabelPrefix: String(cfg.contextLabelPrefix || 'Context'),
+    selectionHighlight: Boolean(cfg.selectionHighlight !== false),
+    maxSnippetChars: Number(cfg.maxSnippetChars) || 800,
+    pillTruncateChars: Number(cfg.pillTruncateChars) || 30,
+  };
+}
+
+function ensureCtxAddButton() {
+  if (ctxAddBtnEl) return ctxAddBtnEl;
+  const btn = document.createElement('button');
+  btn.className = SELECTORS.CLASS_CONTEXT_ADD_BTN;
+  btn.id = 'sp-ctx-add-btn';
+  btn.style.display = 'none';
+  btn.textContent = getConfigContext().buttonLabel;
+  elements.content.appendChild(btn);
+  ctxAddBtnEl = btn;
+  return btn;
+}
+
+function showCtxAddButtonNearSelection() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) { hideCtxAddButton(); return; }
+  const range = sel.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+  // Only for AI bubble bodies
+  const body = (container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement)?.closest(`.${SELECTORS.CLASS_MSG}.${SELECTORS.CLASS_AI} .msg-body`);
+  if (!body) { hideCtxAddButton(); return; }
+
+  const maxReached = selectedContexts.length >= getConfigContext().maxItems;
+  const rect = range.getBoundingClientRect();
+  const hostRect = elements.content.getBoundingClientRect();
+  const btn = ensureCtxAddButton();
+  btn.textContent = getConfigContext().buttonLabel;
+  btn.disabled = maxReached;
+  btn.title = maxReached ? `${getConfigContext().pillCounterTemplate.replace('{count}', String(selectedContexts.length)).replace('{max}', String(getConfigContext().maxItems))}` : getConfigContext().buttonLabel;
+
+  // Position button slightly above selection
+  const top = rect.top - hostRect.top - 30 + elements.content.scrollTop;
+  const left = rect.left - hostRect.left + elements.content.scrollLeft;
+  btn.style.top = `${Math.max(0, top)}px`;
+  btn.style.left = `${Math.max(0, left)}px`;
+  btn.style.display = 'inline-flex';
+
+  // Click handler
+  const handleClick = (e) => {
+    e.preventDefault();
+    tryAddCurrentSelectionToContext();
+  };
+  btn.onclick = handleClick;
+}
+
+function hideCtxAddButton() {
+  if (ctxAddBtnEl) ctxAddBtnEl.style.display = 'none';
+}
+
+function tryAddCurrentSelectionToContext() {
+  const cfg = getConfigContext();
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) return;
+
+  // Validate container
+  const range = sel.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+  const body = (container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement)?.closest(`.${SELECTORS.CLASS_MSG}.${SELECTORS.CLASS_AI} .msg-body`);
+  if (!body) return;
+
+  // Extract text
+  const text = String(sel.toString() || '').trim();
+  if (!text) return;
+
+  if (selectedContexts.length >= cfg.maxItems) return;
+
+  // Avoid duplicates by exact text match within same bubble
+  const bubbleEl = body.closest(`.${SELECTORS.CLASS_MSG}.${SELECTORS.CLASS_AI}`);
+  const bubbleId = bubbleEl ? (bubbleEl.dataset.msgId || (() => { const id = `ai-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; bubbleEl.dataset.msgId = id; return id; })()) : 'unknown';
+
+  if (selectedContexts.some(c => c.text === text && c.bubbleId === bubbleId)) {
+    hideCtxAddButton();
+    return;
+  }
+
+  // Highlight selection (wrap range)
+  let highlightSpan = null;
+  if (cfg.selectionHighlight) {
+    highlightSpan = document.createElement('span');
+    highlightSpan.className = SELECTORS.CLASS_CONTEXT_HIGHLIGHT;
+    try {
+      range.surroundContents(highlightSpan);
+    } catch {
+      // If range is non-contiguous or crosses nodes, fallback to simple add without wrap
+      highlightSpan = null;
+    }
+  }
+
+  const ctx = {
+    id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    text,
+    bubbleId,
+    highlightEl: highlightSpan,
+  };
+  selectedContexts.push(ctx);
+  updateContextPillsUI();
+  hideCtxAddButton();
+  sel.removeAllRanges();
+}
+
+function truncateForPill(text, maxChars) {
+  if (text.length <= maxChars) return text;
+  return text.slice(0, Math.max(0, maxChars - 1)) + '…';
+}
+
+function updateContextPillsUI() {
+  const pillsRow = document.getElementById(SELECTORS.CONTEXT_PILLS);
+  const counterEl = document.getElementById(SELECTORS.CONTEXT_COUNTER);
+  const clearBtn = document.getElementById(SELECTORS.CONTEXT_CLEAR);
+  if (!pillsRow || !counterEl || !clearBtn) return;
+
+  // Reset inner pills (preserve actions container)
+  const actions = pillsRow.querySelector('.actions');
+  pillsRow.innerHTML = '';
+
+  const cfg = getConfigContext();
+  selectedContexts.forEach((ctx, idx) => {
+    const pill = document.createElement('span');
+    pill.className = 'pill';
+    pill.title = ctx.text;
+    pill.dataset.ctxId = ctx.id;
+    pill.textContent = truncateForPill(ctx.text, cfg.pillTruncateChars);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove';
+    removeBtn.setAttribute('aria-label', `Remove context ${idx + 1}`);
+    removeBtn.innerHTML = '×';
+    removeBtn.onclick = () => removeContextById(ctx.id);
+
+    pill.appendChild(document.createTextNode(' '));
+    pill.appendChild(removeBtn);
+
+    // Hover to flash highlight
+    pill.onmouseenter = () => {
+      if (ctx.highlightEl) {
+        ctx.highlightEl.style.transition = 'background-color .2s ease';
+        ctx.highlightEl.style.backgroundColor = 'rgba(255,255,255,0.35)';
+        setTimeout(() => { if (ctx.highlightEl) ctx.highlightEl.style.backgroundColor = ''; }, 200);
+      }
+    };
+
+    pillsRow.appendChild(pill);
+  });
+
+  // Re-append actions
+  const actionsNew = document.createElement('div');
+  actionsNew.className = 'actions';
+  const countText = cfg.pillCounterTemplate
+    .replace('{count}', String(selectedContexts.length))
+    .replace('{max}', String(cfg.maxItems));
+
+  const counterSpan = document.createElement('span');
+  counterSpan.className = 'counter';
+  counterSpan.id = SELECTORS.CONTEXT_COUNTER;
+  counterSpan.textContent = countText;
+
+  const clearButton = document.createElement('button');
+  clearButton.className = 'clear';
+  clearButton.id = SELECTORS.CONTEXT_CLEAR;
+  clearButton.textContent = cfg.pillClearAllLabel;
+  clearButton.disabled = selectedContexts.length === 0;
+  clearButton.onclick = clearAllContexts;
+
+  actionsNew.appendChild(counterSpan);
+  actionsNew.appendChild(clearButton);
+  pillsRow.appendChild(actionsNew);
+
+  // Show/hide row and adjust input padding
+  pillsRow.style.display = selectedContexts.length > 0 ? 'flex' : 'none';
+  // Update input placeholder? optional
+}
+
+function removeContextById(id) {
+  const idx = selectedContexts.findIndex(c => c.id === id);
+  if (idx === -1) return;
+  const [removed] = selectedContexts.splice(idx, 1);
+  if (removed && removed.highlightEl) {
+    try {
+      const parent = removed.highlightEl.parentNode;
+      while (removed.highlightEl.firstChild) {
+        parent.insertBefore(removed.highlightEl.firstChild, removed.highlightEl);
+      }
+      parent.removeChild(removed.highlightEl);
+    } catch {}
+  }
+  updateContextPillsUI();
+}
+
+function clearAllContexts() {
+  selectedContexts.forEach(c => {
+    if (c.highlightEl && c.highlightEl.parentNode) {
+      try {
+        const parent = c.highlightEl.parentNode;
+        while (c.highlightEl.firstChild) {
+          parent.insertBefore(c.highlightEl.firstChild, c.highlightEl);
+        }
+        parent.removeChild(c.highlightEl);
+      } catch {}
+    }
+  });
+  selectedContexts = [];
+  updateContextPillsUI();
+}
+
+export function getSelectedContexts() {
+  const cfg = getConfigContext();
+  const trimmed = selectedContexts.map(c => ({
+    id: c.id,
+    bubbleId: c.bubbleId,
+    text: c.text.length > cfg.maxSnippetChars ? c.text.slice(0, cfg.maxSnippetChars) : c.text,
+  }));
+  return trimmed;
+}
+
+export function clearSelectedContextsAfterSend() {
+  clearAllContexts();
+}
+
+function handleSelectionChange() {
+  try {
+    showCtxAddButtonNearSelection();
+  } catch {
+    hideCtxAddButton();
+  }
+}
+
+/**
  * Initializes and caches all DOM element references
  * @throws {UIError} If critical elements are missing
  */
@@ -84,6 +329,14 @@ export function initializeElements() {
   if (!elements.input || !elements.content || !elements.sendButton) {
     throw new UIError('Critical UI elements are missing from DOM');
   }
+
+  // Context selection listeners
+  try {
+    document.addEventListener('selectionchange', handleSelectionChange, { signal: abortController.signal });
+    elements.content.addEventListener('scroll', () => { hideCtxAddButton(); }, { signal: abortController.signal });
+    window.addEventListener('resize', () => { hideCtxAddButton(); }, { signal: abortController.signal });
+    updateContextPillsUI();
+  } catch {}
 
   log.info('UI elements initialized successfully');
 }

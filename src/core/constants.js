@@ -212,6 +212,14 @@ export const SELECTORS = {
   TOOLS_BUTTON: 'sp-tools',
   TOOLS_MENU: 'sp-tools-menu',
   
+  // Context selection UI
+  CONTEXT_PILLS: 'sp-context-pills',
+  CONTEXT_COUNTER: 'sp-context-counter',
+  CONTEXT_CLEAR: 'sp-context-clear',
+  CLASS_CONTEXT_PILL: 'ctx-pill',
+  CLASS_CONTEXT_HIGHLIGHT: 'ctx-hi',
+  CLASS_CONTEXT_ADD_BTN: 'ctx-add-btn',
+  
   // CSS classes
   CLASS_MSG: 'msg',
   CLASS_USER: 'user',

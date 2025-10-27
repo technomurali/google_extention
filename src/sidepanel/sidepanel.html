@@ -126,6 +126,7 @@ JAVASCRIPT:
       padding: var(--tab-bar-content-padding, 10px 12px);
       scrollbar-width: thin;
       scrollbar-color: var(--sp-scrollbar-thumb, rgba(255,255,255,0.3)) transparent;
+      position: relative;
     }
     .content::-webkit-scrollbar { width: 10px; }
     .content::-webkit-scrollbar-thumb { background-color: var(--sp-scrollbar-thumb, rgba(255,255,255,0.35)); border-radius: 8px; }
@@ -137,6 +138,7 @@ JAVASCRIPT:
       backdrop-filter: blur(6px);
       display: flex;
       gap: 8px;
+      flex-direction: column;
     }
     .input {
       width: 100%;
@@ -206,9 +208,11 @@ JAVASCRIPT:
       position: relative;
       flex: 1;
       display: flex;
-      align-items: flex-end;
+      flex-direction: column;
+      align-items: stretch;
     }
-    .bottom-inner .send-btn {
+    .input-wrap { position: relative; }
+    .input-wrap .send-btn {
       position: absolute;
       right: 12px;
       bottom: 12px;
@@ -219,7 +223,7 @@ JAVASCRIPT:
     }
 
     /* Tools button positioned beside send */
-    .bottom-inner .tools-btn {
+    .input-wrap .tools-btn {
       position: absolute;
       right: 52px;
       bottom: 12px;
@@ -234,13 +238,13 @@ JAVASCRIPT:
       display: inline-flex; align-items: center; justify-content: center;
       cursor: pointer;
     }
-    .bottom-inner .tools-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
+    .input-wrap .tools-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
 
     /* Increase input right padding to make room for both buttons */
     .bottom .input { padding-right: 92px; }
 
     /* Tools dropdown menu */
-    .tools-menu {
+    .input-wrap .tools-menu {
       position: absolute;
       right: 12px;
       bottom: 54px;
@@ -317,6 +321,76 @@ JAVASCRIPT:
       font-size: 11px;
       opacity: 0.9;
     }
+    /* Context pills row above input */
+    .context-pills-row {
+      position: relative;
+      display: none; /* hidden until has pills */
+      gap: 6px;
+      padding: 0 12px 6px 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .context-pills-row .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 46%;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--sp-border-color, rgba(255,255,255,0.25));
+      background: rgba(255,255,255,0.15);
+      color: var(--sp-text-color, #fff);
+      font-size: 12px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .context-pills-row .pill .remove {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .context-pills-row .actions {
+      display: inline-flex;
+      gap: 8px;
+      margin-left: auto;
+      align-items: center;
+    }
+    .context-pills-row .counter { font-size: 12px; opacity: 0.9; }
+    .context-pills-row .clear {
+      appearance: none;
+      border: 1px solid var(--sp-button-border, rgba(255,255,255,0.25));
+      background: var(--sp-button-bg, rgba(255,255,255,0.15));
+      color: var(--sp-button-color, #fff);
+      border-radius: 8px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .context-pills-row .clear:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); }
+
+    /* Highlight for selected context text inside bubbles */
+    .ctx-hi { background: rgba(255,255,255,0.2); border-radius: 4px; padding: 0 2px; }
+
+    /* Floating Ask iChrome add button near selection */
+    .content .ctx-add-btn {
+      position: absolute;
+      z-index: 30;
+      appearance: none;
+      border: 1px solid var(--sp-button-border, rgba(255,255,255,0.25));
+      background: var(--sp-button-bg, rgba(255,255,255,0.15));
+      color: var(--sp-button-color, #fff);
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      display: none; /* shown dynamically */
+      white-space: nowrap;
+    }
+    .content .ctx-add-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
   </style>
 </head>
 
@@ -345,35 +419,46 @@ JAVASCRIPT:
     <div class="bottom">
       <div class="bottom-inner">
         <!-- Drag handle for manual textarea resizing -->
-        <div class="resize-handle" id="sp-resize"></div>
-        
-        <!-- Main input field: Auto-grows and manually resizable -->
-        <textarea class="input" id="sp-input" placeholder="" rows="3"></textarea>
-        
-        <!-- Tools button -->
-        <button class="tools-btn" id="sp-tools" title="Tools">
-          <!-- simple list icon (three dots) -->
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="5" cy="12" r="2"/>
-            <circle cx="12" cy="12" r="2"/>
-            <circle cx="19" cy="12" r="2"/>
-          </svg>
-        </button>
-        
-        <!-- Send button with SVG icon -->
-        <button class="send-btn" id="sp-send" title="Send">
-          <!-- Paper airplane icon (send symbol) -->
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 12L21 3L14 21L11 13L3 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
+        <div class="input-wrap">
+          <div class="resize-handle" id="sp-resize"></div>
 
-        <!-- Tools dropdown menu -->
-        <div class="tools-menu" id="sp-tools-menu">
-          <button class="tool-item" data-tool="chat">@GeneralChat</button>
-          <button class="tool-item" data-tool="history">@BrowserHistory</button>
-          <button class="tool-item" data-tool="bookmarks">@Bookmarks</button>
-          <button class="tool-item" data-tool="downloads">@Downloads</button>
+          <!-- Main input field: Auto-grows and manually resizable -->
+          <textarea class="input" id="sp-input" placeholder="" rows="3"></textarea>
+
+          <!-- Tools button -->
+          <button class="tools-btn" id="sp-tools" title="Tools">
+            <!-- simple list icon (three dots) -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="5" cy="12" r="2"/>
+              <circle cx="12" cy="12" r="2"/>
+              <circle cx="19" cy="12" r="2"/>
+            </svg>
+          </button>
+
+          <!-- Send button with SVG icon -->
+          <button class="send-btn" id="sp-send" title="Send">
+            <!-- Paper airplane icon (send symbol) -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 12L21 3L14 21L11 13L3 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+
+          <!-- Tools dropdown menu -->
+          <div class="tools-menu" id="sp-tools-menu">
+            <button class="tool-item" data-tool="chat">@GeneralChat</button>
+            <button class="tool-item" data-tool="history">@BrowserHistory</button>
+            <button class="tool-item" data-tool="bookmarks">@Bookmarks</button>
+            <button class="tool-item" data-tool="downloads">@Downloads</button>
+          </div>
+        </div>
+
+        <!-- Context pills row (below input) -->
+        <div class="context-pills-row" id="sp-context-pills">
+          <!-- pills injected dynamically; actions at end -->
+          <div class="actions">
+            <span class="counter" id="sp-context-counter"></span>
+            <button class="clear" id="sp-context-clear"></button>
+          </div>
         </div>
       </div>
       

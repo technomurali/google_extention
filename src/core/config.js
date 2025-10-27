@@ -162,6 +162,21 @@ const CONFIG = {
   },
 
   // ============================================
+  // CONTEXT SELECTION (Ask iChrome)
+  // Controls selection-to-context behavior and UI labels
+  // ============================================
+  contextSelection: {
+    maxItems: 5,                 // Maximum number of context snippets allowed
+    buttonLabel: 'Ask iChrome',  // Floating button label shown on selection
+    pillClearAllLabel: 'Clear all',
+    pillCounterTemplate: '{count}/{max}', // e.g., 2/5
+    contextLabelPrefix: 'Context', // Used as: Context 1:, Context 2:
+    selectionHighlight: true,     // Highlight selected text in source bubble
+    maxSnippetChars: 800,         // Soft cap for snippet length included in prompt
+    pillTruncateChars: 15,        // Characters shown on pill label
+  },
+
+  // ============================================
   // Z-INDEX (Layer Priority)
   // Controls which elements appear on top of others
   // Higher numbers = closer to user (on top)
