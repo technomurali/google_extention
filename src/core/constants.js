@@ -207,6 +207,7 @@ export const SELECTORS = {
   CONTENT: 'sp-content',
   RESIZE_HANDLE: 'sp-resize',
   STATUS: 'sp-status',
+  MINIMIZE_BUTTON: 'sp-content-minimize',
   SEND_BUTTON: 'sp-send',
   TOOLS_BUTTON: 'sp-tools',
   TOOLS_MENU: 'sp-tools-menu',

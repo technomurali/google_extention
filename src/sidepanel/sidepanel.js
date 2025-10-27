@@ -337,6 +337,7 @@ function bindEventListeners() {
     }
   });
 
+
   // Cleanup on window unload
   window.addEventListener('beforeunload', () => {
     destroyAISession();

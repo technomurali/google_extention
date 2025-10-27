@@ -94,6 +94,32 @@ JAVASCRIPT:
       font-size: 12px;
       opacity: 0.85;
     }
+    /* Per-bubble minimize styles */
+    .msg { position: relative; }
+    .msg .msg-body { display: block; }
+    .msg .msg-minimize-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 30px;
+      height: 30px;
+      appearance: none;
+      border: 1px solid var(--sp-button-border, rgba(255,255,255,0.25));
+      background: var(--sp-button-bg, rgba(255,255,255,0.15));
+      color: var(--sp-button-color, #fff);
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .msg .msg-minimize-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
+    /* Ensure AI bubble content starts below and left of the button */
+    .msg.ai { padding-top: 36px; padding-right: 40px; }
+    .msg.ai.minimized .msg-body {
+      max-height: 55px;
+      overflow: hidden;
+    }
     .content {
       flex: 1;
       overflow: auto;

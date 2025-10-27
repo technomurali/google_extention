@@ -62,6 +62,7 @@ let minInputHeight = 0;
  * Onboarding help element reference
  */
 let onboardingEl = null;
+// Per-bubble minimize is used; no global content minimize state
 
 /**
  * Initializes and caches all DOM element references
@@ -416,16 +417,42 @@ export function setupToolsMenu() {
  * @returns {HTMLElement} Created message element
  */
 export function appendMessage(text, role) {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `${SELECTORS.CLASS_MSG} ${role}`;
-  messageDiv.textContent = text;
-  messageDiv.setAttribute('role', role === 'user' ? 'status' : 'log');
-  messageDiv.setAttribute('aria-live', 'polite');
+  const bubble = document.createElement('div');
+  bubble.className = `${SELECTORS.CLASS_MSG} ${role}`;
+  bubble.setAttribute('role', role === 'user' ? 'status' : 'log');
+  bubble.setAttribute('aria-live', 'polite');
 
-  elements.content.appendChild(messageDiv);
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  if (typeof text === 'string') body.textContent = text;
+  bubble.appendChild(body);
+
+  // Add per-bubble minimize button for AI messages
+  if (role === 'ai') {
+    bubble.style.position = 'relative';
+    const btn = document.createElement('button');
+    btn.className = 'msg-minimize-btn';
+    btn.title = 'Minimize';
+    btn.setAttribute('aria-label', 'Minimize');
+    btn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5"/></svg>';
+    btn.addEventListener('click', () => {
+      const minimized = bubble.classList.toggle('minimized');
+      if (minimized) {
+        btn.title = 'Maximize';
+        btn.setAttribute('aria-label', 'Maximize');
+        btn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M17 14l-5-5-5 5"/></svg>';
+      } else {
+        btn.title = 'Minimize';
+        btn.setAttribute('aria-label', 'Minimize');
+        btn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5"/></svg>';
+      }
+    }, { signal: abortController.signal });
+    bubble.appendChild(btn);
+  }
+
+  elements.content.appendChild(bubble);
   scrollToBottom();
-
-  return messageDiv;
+  return body; // return body for streaming updates
 }
 
 /**
@@ -654,6 +681,9 @@ export function enhanceAccessibility() {
 
   log.debug('Accessibility enhancements applied');
 }
+
+// Content-level minimize/deprecated: Implemented per-bubble in appendMessage
+// (toggleContentMinimize, initializeContentState) — removed
 
 /**
  * Cleans up all event listeners and resources
