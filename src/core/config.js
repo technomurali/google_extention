@@ -217,6 +217,56 @@ const CONFIG = {
   },
 
   // ============================================
+  // SPEECH (TEXT-TO-SPEECH)
+  // Configuration for in-bubble speech synthesis feature
+  // ============================================
+  speech: {
+    enabled: true,
+    // Default voice (null = browser default)
+    defaultVoice: null,
+    // Speech rate (0.1 to 10, 1 = normal)
+    defaultRate: 1.0,
+    // Speech pitch (0 to 2, 1 = normal)
+    defaultPitch: 1.0,
+    // Speech volume (0 to 1, 1 = full volume)
+    defaultVolume: 1.0,
+    // Highlight text as it's being read
+    highlightText: true,
+    // Auto-stop when new message is sent
+    autoStopOnNewMessage: true,
+    // Show language info in voice selector
+    showVoiceLanguage: true,
+    // Maximum visible voices before scroll
+    maxVisibleVoices: 8,
+    // Rate control range
+    rateMin: 0.5,
+    rateMax: 2.0,
+    rateStep: 0.1,
+    // Pitch control range
+    pitchMin: 0.5,
+    pitchMax: 2.0,
+    pitchStep: 0.1,
+    // Volume control range
+    volumeMin: 0,
+    volumeMax: 1,
+    volumeStep: 0.05,
+    labels: {
+      speak: 'Read aloud',
+      pause: 'Pause',
+      resume: 'Resume',
+      stop: 'Stop',
+      settings: 'Speech Settings',
+      voiceLabel: 'Voice',
+      speedLabel: 'Speed',
+      pitchLabel: 'Pitch',
+      volumeLabel: 'Volume',
+      testButton: 'Test Voice',
+      noVoices: 'No voices available',
+      loading: 'Loading voices...',
+    },
+  },
+
+  // ============================================
   // Z-INDEX (Layer Priority)
   // Controls which elements appear on top of others
   // Higher numbers = closer to user (on top)

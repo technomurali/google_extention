@@ -20,6 +20,17 @@ import { searchBookmarks, convertBookmarksToResults } from '../features/bookmark
 import { searchDownloads, convertDownloadsToResults } from '../features/downloads/downloads.js';
 import { initThemeSync } from '../services/theme.js';
 import {
+  initializeSpeech,
+  isSpeechAvailable,
+  getVoices,
+  getSettings,
+  updateSettings,
+  isSpeaking,
+  toggle as toggleSpeech,
+  stop as stopSpeech,
+  cleanup as cleanupSpeech,
+} from '../services/speech.js';
+import {
   initializeElements,
   applyConfiguration,
   initializeTextareaHeight,
@@ -240,6 +251,12 @@ async function sendMessage() {
     return;
   }
 
+  // Stop any active speech before sending new message
+  const config = window.CONFIG?.speech;
+  if (config && config.autoStopOnNewMessage) {
+    stopSpeech();
+  }
+
   // Build final prompt with labeled contexts
   const cfg = window.CONFIG?.contextSelection || {};
   const labelPrefix = String(cfg.contextLabelPrefix || 'Context');
@@ -312,6 +329,183 @@ async function sendMessage() {
 }
 
 /**
+ * Sets up speech settings modal
+ */
+function setupSpeechSettings() {
+  const settingsBtn = document.getElementById('sp-settings-btn');
+  const modal = document.getElementById('sp-speech-settings');
+  const closeBtn = document.getElementById('sp-speech-close');
+  const voiceMenu = document.getElementById('sp-voice-menu');
+  const voiceToggle = document.getElementById('sp-voice-toggle');
+  const speedSlider = document.getElementById('sp-speed-slider');
+  const speedValue = document.getElementById('sp-speed-value');
+  const pitchSlider = document.getElementById('sp-pitch-slider');
+  const pitchValue = document.getElementById('sp-pitch-value');
+  const volumeSlider = document.getElementById('sp-volume-slider');
+  const volumeValue = document.getElementById('sp-volume-value');
+  const testBtn = document.getElementById('sp-test-voice');
+
+  if (!settingsBtn || !modal) return;
+
+  // Load and populate voices
+  async function loadVoices() {
+    try {
+      const voices = await getVoices();
+      const settings = getSettings();
+      const config = window.CONFIG?.speech || {};
+
+      if (voiceMenu && voiceToggle) {
+        if (!voices || voices.length === 0) {
+          voiceToggle.textContent = (config.labels?.noVoices || 'No voices available');
+          voiceMenu.innerHTML = '';
+          return;
+        }
+        voiceMenu.innerHTML = '';
+        const frag = document.createDocumentFragment();
+        voices.forEach((voice) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'item';
+          const langInfo = config.showVoiceLanguage ? ` (${voice.lang})` : '';
+          btn.textContent = `${voice.name}${langInfo}`;
+          btn.dataset.voiceName = voice.name;
+          btn.addEventListener('click', async () => {
+            await updateSettings({ voice });
+            voiceToggle.textContent = `${voice.name}${langInfo}`;
+            // Close and if currently speaking, restart with new voice
+            const menuEl = document.getElementById('sp-voice-menu');
+            if (menuEl) menuEl.style.display = 'none';
+            if (isSpeaking && isSpeaking()) {
+              stopSpeech();
+              // Optionally: auto-restart last AI bubble if desired (skipped per spec)
+            }
+          }, { once: true });
+          frag.appendChild(btn);
+        });
+        voiceMenu.appendChild(frag);
+        // Set toggle label
+        if (settings.voice) {
+          const v = voices.find(v => v.name === settings.voice.name) || settings.voice;
+          voiceToggle.textContent = `${v.name}${config.showVoiceLanguage ? ` (${v.lang})` : ''}`;
+        } else {
+          const v0 = voices[0];
+          voiceToggle.textContent = `${v0.name}${config.showVoiceLanguage ? ` (${v0.lang})` : ''}`;
+        }
+      }
+    } catch (error) {
+      log.error('Failed to load voices:', error);
+    }
+  }
+
+  // Load current settings
+  function loadCurrentSettings() {
+    const settings = getSettings();
+    
+    if (speedSlider) speedSlider.value = settings.rate;
+    if (speedValue) speedValue.textContent = `${settings.rate.toFixed(1)}×`;
+    
+    if (pitchSlider) pitchSlider.value = settings.pitch;
+    if (pitchValue) pitchValue.textContent = settings.pitch.toFixed(1);
+    
+    if (volumeSlider) volumeSlider.value = settings.volume;
+    if (volumeValue) volumeValue.textContent = `${Math.round(settings.volume * 100)}%`;
+  }
+
+  // Open modal
+  settingsBtn?.addEventListener('click', async () => {
+    await loadVoices();
+    loadCurrentSettings();
+    if (modal) modal.style.display = 'flex';
+  });
+
+  // Close modal
+  const closeModal = () => {
+    if (modal) modal.style.display = 'none';
+  };
+
+  closeBtn?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  // Voice selection
+  // Toggle voice menu open/close
+  voiceToggle?.addEventListener('click', () => {
+    if (!voiceMenu) return;
+    const isOpen = voiceMenu.style.display === 'block';
+    voiceMenu.style.display = isOpen ? 'none' : 'block';
+  });
+
+  // Close when clicking outside panel
+  document.addEventListener('click', (ev) => {
+    if (!voiceMenu || !voiceToggle) return;
+    const target = ev.target;
+    const holder = document.getElementById('sp-voice');
+    if (holder && !holder.contains(target)) {
+      voiceMenu.style.display = 'none';
+    }
+  });
+
+  // Speed control
+  speedSlider?.addEventListener('input', async () => {
+    const rate = parseFloat(speedSlider.value);
+    if (speedValue) speedValue.textContent = `${rate.toFixed(1)}×`;
+    await updateSettings({ rate });
+  });
+
+  // Pitch control
+  pitchSlider?.addEventListener('input', async () => {
+    const pitch = parseFloat(pitchSlider.value);
+    if (pitchValue) pitchValue.textContent = pitch.toFixed(1);
+    await updateSettings({ pitch });
+  });
+
+  // Volume control
+  volumeSlider?.addEventListener('input', async () => {
+    const volume = parseFloat(volumeSlider.value);
+    if (volumeValue) volumeValue.textContent = `${Math.round(volume * 100)}%`;
+    await updateSettings({ volume });
+  });
+
+  // Test button
+  testBtn?.addEventListener('click', () => {
+    const config = window.CONFIG?.speech || {};
+    const isNowSpeaking = isSpeaking && isSpeaking();
+    if (isNowSpeaking) {
+      stopSpeech();
+      testBtn.textContent = config.labels?.testButton || 'Test Voice';
+      return;
+    }
+
+    const testText = 'Hello! This is a test of the text to speech feature.';
+    const tempDiv = document.createElement('div');
+    tempDiv.textContent = testText;
+    tempDiv.style.display = 'none';
+    document.body.appendChild(tempDiv);
+
+    const tempBtn = document.createElement('button');
+    tempBtn.innerHTML = '🔊';
+    document.body.appendChild(tempBtn);
+
+    // Start speaking and toggle label to Stop
+    testBtn.textContent = config.labels?.stop || 'Stop';
+    toggleSpeech(tempDiv, tempBtn);
+
+    // Poll speaking state to revert label when finished
+    const poll = setInterval(() => {
+      if (!isSpeaking || !isSpeaking()) {
+        clearInterval(poll);
+        testBtn.textContent = config.labels?.testButton || 'Test Voice';
+        tempDiv.remove();
+        tempBtn.remove();
+      }
+    }, 250);
+  });
+
+  log.info('Speech settings initialized');
+}
+
+/**
  * Binds event listeners for user interactions
  */
 function bindEventListeners() {
@@ -348,11 +542,33 @@ function bindEventListeners() {
     }
   });
 
+  // Speech toggle event handler (from AI message bubbles)
+  document.addEventListener('speech-toggle', (event) => {
+    const { element, button } = event.detail;
+    if (element && button) {
+      toggleSpeech(element, button);
+    }
+  });
+
+  // Speech stop event handler (from AI message bubbles)
+  document.addEventListener('speech-stop', () => {
+    stopSpeech();
+  });
+
+  // Stop speech when new message is sent (if configured)
+  const originalSendMessage = sendMessage;
+  window.addEventListener('beforeSendMessage', () => {
+    const config = window.CONFIG?.speech;
+    if (config && config.autoStopOnNewMessage) {
+      stopSpeech();
+    }
+  });
 
   // Cleanup on window unload
   window.addEventListener('beforeunload', () => {
     destroyAISession();
     cleanupUI();
+    cleanupSpeech();
     log.info('Side panel cleanup completed');
   });
 
@@ -374,10 +590,19 @@ async function initializeSidePanel() {
     applyConfiguration();
     enhanceAccessibility();
     
+    // Initialize speech service
+    const speechAvailable = await initializeSpeech();
+    if (speechAvailable) {
+      log.info('Speech synthesis available');
+    } else {
+      log.warn('Speech synthesis not available');
+    }
+    
     // Setup UI components
     initializeTextareaHeight();
     setupTextareaResizing();
     setupToolsMenu();
+    setupSpeechSettings();
     autoGrowTextarea();
 
     // Bind event listeners

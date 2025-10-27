@@ -882,6 +882,9 @@ export function appendMessage(text, role) {
                 bubble.dataset.currentLang = '';
                 // Reset button icon
                 tbtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 2c1.85 0 3.53.63 4.87 1.69H7.13A7.96 7.96 0 0112 4zm-6.32 3h12.64c.43.6.78 1.26 1.03 1.97H4.65c.25-.71.6-1.37 1.03-1.97zM4.1 10h15.8c.07.33.1.66.1 1s-.03.67-.1 1H4.1A7.96 7.96 0 014 11c0-.34.03-.67.1-1zm.55 4h14.7a7.97 7.97 0 01-1.03 1.97H5.68A7.97 7.97 0 014.65 14zM7.13 18h9.74A7.96 7.96 0 0112 20a7.96 7.96 0 01-4.87-2z"/></svg>';
+                // Stop active speech so next play uses new language
+                const stopEvt = new CustomEvent('speech-stop', { bubbles: true, composed: true });
+                bubble.dispatchEvent(stopEvt);
               }
               menu.style.display = 'none';
               return;
@@ -913,6 +916,9 @@ export function appendMessage(text, role) {
                 // Update button to show language code
                 tbtn.textContent = String(code || '').toUpperCase();
                 rememberRecentLanguage(code);
+                // Stop active speech so next play uses new language
+                const stopEvt = new CustomEvent('speech-stop', { bubbles: true, composed: true });
+                bubble.dispatchEvent(stopEvt);
                 log.info(`Translation successful to ${code}`);
               } else {
                 log.warn(`Translation failed:`, res?.error);
@@ -956,6 +962,71 @@ export function appendMessage(text, role) {
         bubble.appendChild(menu);
       }
     } catch {}
+
+    // Speech button (Text-to-Speech)
+    try {
+      const scfg = window.CONFIG?.speech;
+      if (scfg && scfg.enabled) {
+        // Play/Pause button
+        const playBtn = document.createElement('button');
+        playBtn.className = 'msg-speech-btn';
+        playBtn.title = scfg.labels?.speak || 'Read aloud';
+        playBtn.setAttribute('aria-label', scfg.labels?.speak || 'Read aloud');
+        playBtn.innerHTML = '🔊';
+        playBtn.dataset.speechState = 'idle'; // idle, playing, paused
+
+        // Stop button (hidden by default)
+        const stopBtn = document.createElement('button');
+        stopBtn.className = 'msg-speech-stop-btn';
+        stopBtn.title = scfg.labels?.stop || 'Stop';
+        stopBtn.setAttribute('aria-label', scfg.labels?.stop || 'Stop');
+        stopBtn.innerHTML = '⏹';
+        stopBtn.style.display = 'none';
+
+        // Helper to show/hide buttons based on state
+        function setButtonsState(state) {
+          if (state === 'idle') {
+            playBtn.style.display = '';
+            stopBtn.style.display = 'none';
+          } else {
+            // playing or paused: show both
+            playBtn.style.display = '';
+            stopBtn.style.display = '';
+          }
+          playBtn.dataset.speechState = state;
+        }
+
+        // Play/Pause handler
+        playBtn.addEventListener('click', () => {
+          const event = new CustomEvent('speech-toggle', {
+            bubbles: true,
+            composed: true,
+            detail: { element: body, button: playBtn }
+          });
+          bubble.dispatchEvent(event);
+        }, { signal: abortController.signal });
+
+        // Stop handler
+        stopBtn.addEventListener('click', () => {
+          const event = new CustomEvent('speech-stop', {
+            bubbles: true,
+            composed: true,
+            detail: { element: body, button: playBtn }
+          });
+          bubble.dispatchEvent(event);
+        }, { signal: abortController.signal });
+
+        // Listen for state events from speech service to update UI
+        playBtn.addEventListener('speech-started', () => setButtonsState('playing'), { signal: abortController.signal });
+        playBtn.addEventListener('speech-paused', () => setButtonsState('paused'), { signal: abortController.signal });
+        playBtn.addEventListener('speech-resumed', () => setButtonsState('playing'), { signal: abortController.signal });
+        playBtn.addEventListener('speech-ended', () => setButtonsState('idle'), { signal: abortController.signal });
+
+        bubble.appendChild(stopBtn);
+        bubble.appendChild(playBtn);
+      }
+    } catch {}
+
     const btn = document.createElement('button');
     btn.className = 'msg-minimize-btn';
     btn.title = 'Minimize';
