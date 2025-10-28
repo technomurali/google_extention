@@ -186,6 +186,8 @@ export async function renderNotesListBubble() {
   // Hide speech and translate buttons, add + New button in their place
   const bubble = body.parentElement;
   if (bubble) {
+    // Reduce top padding to reclaim space since we hide native header controls
+    bubble.style.paddingTop = '8px';
     // Hide unwanted buttons
     const speechBtn = bubble.querySelector('.msg-speech-btn');
     const speechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
@@ -404,8 +406,11 @@ export async function renderNotesListBubble() {
 
       const delBtn = document.createElement('button');
       delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
+        <path d="M3 6h18"/>
+        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        <path d="M10 11v6"/>
+        <path d="M14 11v6"/>
+        <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
       </svg>`;
       delBtn.style.background = 'none';
       delBtn.style.border = 'none';
@@ -512,23 +517,30 @@ export async function renderEditorBubble(noteId) {
   // Hide speech and translate buttons for ChromePad editor
   const bubble = body.parentElement;
   if (bubble) {
+    // Reduce top padding to reclaim vertical space (native controls are hidden)
+    bubble.style.paddingTop = '8px';
     const speechBtn = bubble.querySelector('.msg-speech-btn');
     const speechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
     const translateBtn = bubble.querySelector('.msg-translate-btn');
+    const minimizeBtn = bubble.querySelector('.msg-minimize-btn');
     if (speechBtn) speechBtn.style.display = 'none';
     if (speechStopBtn) speechStopBtn.style.display = 'none';
     if (translateBtn) translateBtn.style.display = 'none';
+    if (minimizeBtn) minimizeBtn.style.display = 'none';
   }
 
   // Compact header: Back | Title + icons
   const headerRow = document.createElement('div');
   headerRow.style.display = 'flex';
   headerRow.style.alignItems = 'center';
-  headerRow.style.justifyContent = 'space-between';
+  headerRow.style.justifyContent = 'flex-end';
   headerRow.style.marginBottom = '8px';
 
   const backBtn = document.createElement('button');
-  backBtn.innerHTML = '← Back';
+  backBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"></line>
+    <line x1="6" y1="6" x2="18" y2="18"></line>
+  </svg>`;
   backBtn.style.background = 'none';
   backBtn.style.border = 'none';
   backBtn.style.color = 'inherit';
@@ -536,7 +548,7 @@ export async function renderEditorBubble(noteId) {
   backBtn.style.fontSize = '12px';
   backBtn.style.opacity = '0.7';
   backBtn.style.padding = '4px';
-  backBtn.title = 'Back to list';
+  backBtn.title = 'Close';
   backBtn.addEventListener('mouseenter', () => backBtn.style.opacity = '1');
   backBtn.addEventListener('mouseleave', () => backBtn.style.opacity = '0.7');
 
@@ -564,8 +576,11 @@ export async function renderEditorBubble(noteId) {
 
   const delBtn = document.createElement('button');
   delBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
+    <path d="M3 6h18"/>
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+    <path d="M10 11v6"/>
+    <path d="M14 11v6"/>
+    <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
   </svg>`;
   delBtn.style.background = 'none';
   delBtn.style.border = 'none';
@@ -717,8 +732,7 @@ export async function renderEditorBubble(noteId) {
     try { return window.prompt(message || ''); } catch { return null; }
   }
 
-  // Min/Max toggle button (collapse/expand note body)
-  let isCollapsed = false;
+  // Min/Max toggle button (bubble-level minimize/restore)
   const minMaxBtn = document.createElement('button');
   minMaxBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="6 9 12 15 18 9"></polyline>
@@ -731,27 +745,28 @@ export async function renderEditorBubble(noteId) {
   minMaxBtn.style.display = 'inline-flex';
   minMaxBtn.style.alignItems = 'center';
   minMaxBtn.style.justifyContent = 'center';
-  minMaxBtn.title = 'Minimize/Maximize';
+  minMaxBtn.title = 'Minimize';
   minMaxBtn.addEventListener('mouseenter', () => minMaxBtn.style.opacity = '1');
   minMaxBtn.addEventListener('mouseleave', () => minMaxBtn.style.opacity = '0.6');
 
-  function setCollapsed(next) {
-    isCollapsed = !!next;
+  function toggleBubbleMinimized() {
     // Close rewrite menu if open
     rewriteMenu.style.display = 'none';
-    const display = isCollapsed ? 'none' : '';
-    nameInput.style.display = display;
-    contentArea.style.display = display;
-    statusBar.style.display = display || 'flex';
-    // Update icon: up chevron when expanded, down when collapsed
-    minMaxBtn.innerHTML = isCollapsed
-      ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>`
-      : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+    const nowMinimized = !bubble.classList.contains('minimized');
+    bubble.classList.toggle('minimized', nowMinimized);
+    // Update icon and title to reflect next action
+    if (nowMinimized) {
+      minMaxBtn.title = 'Maximize';
+      minMaxBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>`;
+    } else {
+      minMaxBtn.title = 'Minimize';
+      minMaxBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+    }
   }
 
-  minMaxBtn.addEventListener('click', () => setCollapsed(!isCollapsed));
+  minMaxBtn.addEventListener('click', toggleBubbleMinimized);
 
-  // ORDER: Generate, Ask iChrome, Proofread, Rewrite, Save, Delete, Min/Max
+  // ORDER: Generate, Ask iChrome, Proofread, Rewrite, Save, Delete, Close, Min/Max
   actions.appendChild(genBtn);
   actions.appendChild(askBtn);
   actions.appendChild(proofBtn);
@@ -760,7 +775,8 @@ export async function renderEditorBubble(noteId) {
   actions.appendChild(delBtn);
   actions.appendChild(minMaxBtn);
 
-  headerRow.appendChild(backBtn);
+  // Place Close (X) at the right, immediately before Min/Max
+  actions.insertBefore(backBtn, minMaxBtn);
   headerRow.appendChild(actions);
 
   // Name input - compact
@@ -850,10 +866,14 @@ export async function renderEditorBubble(noteId) {
 
   updateStats();
 
-  body.appendChild(headerRow);
-  // Position rewrite menu relative to headerRow
+  // Position rewrite menu relative to headerRow and insert header above body
   headerRow.style.position = 'relative';
   headerRow.appendChild(rewriteMenu);
+  if (bubble) {
+    bubble.insertBefore(headerRow, body);
+  } else {
+    body.parentElement?.insertBefore(headerRow, body);
+  }
   body.appendChild(nameInput);
   body.appendChild(contentArea);
   body.appendChild(statusBar);
