@@ -13,9 +13,11 @@
 // =============================================================================
 
 import { appendMessage, scrollToBottom, addExternalContext } from '../../ui/ui.js';
+import { SELECTORS } from '../../core/constants.js';
 import { debounce } from '../../core/utils.js';
 import { logger } from '../../core/logger.js';
 import { proofreadText, rewriteText, generateTextFromPrompt } from '../../services/ai_editing.js';
+import { translateText } from '../../services/translation.js';
 
 const log = logger.create('ChromePad');
 
@@ -514,18 +516,12 @@ export async function renderEditorBubble(noteId) {
   body.innerHTML = '';
   body.style.padding = '8px';
 
-  // Hide speech and translate buttons for ChromePad editor
+  // Configure ChromePad editor bubble (hide native minimize; reuse native speech/translate UI)
   const bubble = body.parentElement;
   if (bubble) {
-    // Reduce top padding to reclaim vertical space (native controls are hidden)
+    // Reduce top padding to reclaim vertical space
     bubble.style.paddingTop = '8px';
-    const speechBtn = bubble.querySelector('.msg-speech-btn');
-    const speechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
-    const translateBtn = bubble.querySelector('.msg-translate-btn');
     const minimizeBtn = bubble.querySelector('.msg-minimize-btn');
-    if (speechBtn) speechBtn.style.display = 'none';
-    if (speechStopBtn) speechStopBtn.style.display = 'none';
-    if (translateBtn) translateBtn.style.display = 'none';
     if (minimizeBtn) minimizeBtn.style.display = 'none';
   }
 
@@ -690,12 +686,74 @@ export async function renderEditorBubble(noteId) {
     }
   });
 
-  // Ask iChrome button to add current note as context
+  // Read Loud button (icon-only) using speech service via custom event
+  const readBtn = document.createElement('button');
+  readBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+  readBtn.style.background = 'none';
+  readBtn.style.border = 'none';
+  readBtn.style.cursor = 'pointer';
+  readBtn.style.opacity = '0.6';
+  readBtn.style.padding = '2px 4px';
+  readBtn.style.display = 'inline-flex';
+  readBtn.style.alignItems = 'center';
+  readBtn.style.justifyContent = 'center';
+  readBtn.title = 'Read aloud';
+  readBtn.addEventListener('mouseenter', () => readBtn.style.opacity = '1');
+  readBtn.addEventListener('mouseleave', () => readBtn.style.opacity = '0.6');
+
+  // Hidden div used as speech source (textContent)
+  const speechSource = document.createElement('div');
+  speechSource.style.display = 'none';
+  body.appendChild(speechSource);
+  readBtn.addEventListener('click', () => {
+    try {
+      const nativePlayBtn = bubble?.querySelector(`.${SELECTORS.CLASS_TRANSLATE_BTN}`) ? null : null; // placeholder to ensure SELECTORS imported
+    } catch {}
+    speechSource.textContent = String(contentArea.value || '');
+    // Reuse native speech UI by targeting its play button so Stop appears
+    const nativePlayBtn = bubble ? bubble.querySelector('.msg-speech-btn') : null;
+    const ev = new CustomEvent('speech-toggle', { bubbles: true, composed: true, detail: { element: speechSource, button: nativePlayBtn || readBtn } });
+    document.dispatchEvent(ev);
+  });
+
+  // Translate button (icon-only) that triggers native translate menu/UI
+  const translateHdrBtn = document.createElement('button');
+  translateHdrBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
+  translateHdrBtn.style.background = 'none';
+  translateHdrBtn.style.border = 'none';
+  translateHdrBtn.style.cursor = 'pointer';
+  translateHdrBtn.style.opacity = '0.6';
+  translateHdrBtn.style.padding = '2px 4px';
+  translateHdrBtn.style.display = 'inline-flex';
+  translateHdrBtn.style.alignItems = 'center';
+  translateHdrBtn.style.justifyContent = 'center';
+  translateHdrBtn.title = 'Translate';
+  translateHdrBtn.addEventListener('mouseenter', () => translateHdrBtn.style.opacity = '1');
+  translateHdrBtn.addEventListener('mouseleave', () => translateHdrBtn.style.opacity = '0.6');
+
+  translateHdrBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Trigger the native translate button to show the standard menu/UI
+    const nativeTranslateBtn = bubble ? bubble.querySelector(`.${SELECTORS.CLASS_TRANSLATE_BTN}`) : null;
+    if (nativeTranslateBtn) {
+      nativeTranslateBtn.click();
+    }
+  });
+
+  // Ask iChrome button (icon-only) to add current note as context
   const askBtn = document.createElement('button');
-  askBtn.textContent = 'Ask iChrome';
-  askBtn.className = 'send-btn';
-  askBtn.style.padding = '2px 8px';
+  askBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H9l-4 4v-4H5a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4z"/></svg>`;
+  askBtn.style.background = 'none';
+  askBtn.style.border = 'none';
+  askBtn.style.cursor = 'pointer';
+  askBtn.style.opacity = '0.6';
+  askBtn.style.padding = '2px 4px';
+  askBtn.style.display = 'inline-flex';
+  askBtn.style.alignItems = 'center';
+  askBtn.style.justifyContent = 'center';
   askBtn.title = 'Add this note as chat context';
+  askBtn.addEventListener('mouseenter', () => askBtn.style.opacity = '1');
+  askBtn.addEventListener('mouseleave', () => askBtn.style.opacity = '0.6');
 
   askBtn.addEventListener('click', async () => {
     const label = `📄 ${nameInput.value || 'Untitled'}`;
@@ -705,12 +763,20 @@ export async function renderEditorBubble(noteId) {
     }
   });
 
-  // Generate button
+  // Generate button (icon-only)
   const genBtn = document.createElement('button');
-  genBtn.textContent = 'Generate';
-  genBtn.className = 'send-btn';
-  genBtn.style.padding = '2px 8px';
+  genBtn.innerHTML = `<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z\"/></svg>`;
+  genBtn.style.background = 'none';
+  genBtn.style.border = 'none';
+  genBtn.style.cursor = 'pointer';
+  genBtn.style.opacity = '0.6';
+  genBtn.style.padding = '2px 4px';
+  genBtn.style.display = 'inline-flex';
+  genBtn.style.alignItems = 'center';
+  genBtn.style.justifyContent = 'center';
   genBtn.title = 'Generate content into this note';
+  genBtn.addEventListener('mouseenter', () => genBtn.style.opacity = '1');
+  genBtn.addEventListener('mouseleave', () => genBtn.style.opacity = '0.6');
   genBtn.addEventListener('click', async () => {
     const prompt = promptUser('Describe what to generate');
     if (!prompt) return;
@@ -766,9 +832,11 @@ export async function renderEditorBubble(noteId) {
 
   minMaxBtn.addEventListener('click', toggleBubbleMinimized);
 
-  // ORDER: Generate, Ask iChrome, Proofread, Rewrite, Save, Delete, Close, Min/Max
+  // ORDER: Generate, Ask iChrome, Read Loud, Translate, Proofread, Rewrite, Save, Delete, Close, Min/Max
   actions.appendChild(genBtn);
   actions.appendChild(askBtn);
+  actions.appendChild(readBtn);
+  actions.appendChild(translateHdrBtn);
   actions.appendChild(proofBtn);
   actions.appendChild(rewriteBtn);
   actions.appendChild(saveBtn);
