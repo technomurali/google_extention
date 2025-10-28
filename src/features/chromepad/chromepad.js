@@ -523,6 +523,13 @@ export async function renderEditorBubble(noteId) {
     bubble.style.paddingTop = '8px';
     const minimizeBtn = bubble.querySelector('.msg-minimize-btn');
     if (minimizeBtn) minimizeBtn.style.display = 'none';
+    // Hide native speech/stop/translate to avoid overlap; we reuse their logic via custom buttons
+    const nativeSpeechBtn = bubble.querySelector('.msg-speech-btn');
+    const nativeSpeechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
+    const nativeTranslateBtn = bubble.querySelector('.msg-translate-btn');
+    if (nativeSpeechBtn) nativeSpeechBtn.style.display = 'none';
+    if (nativeSpeechStopBtn) nativeSpeechStopBtn.style.display = 'none';
+    if (nativeTranslateBtn) nativeTranslateBtn.style.display = 'none';
   }
 
   // Compact header: Back | Title + icons
@@ -653,8 +660,7 @@ export async function renderEditorBubble(noteId) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       rewriteMenu.style.display = 'none';
-      const bubbleEl = body.parentElement;
-      startPulsing(bubbleEl);
+      startProcessing('Rewriting');
       try {
         const res = await rewriteText(contentArea.value || '', mode);
         if (res && res.ok) {
@@ -663,7 +669,7 @@ export async function renderEditorBubble(noteId) {
           await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
         }
       } finally {
-        stopPulsing(bubbleEl);
+        stopProcessing();
       }
     });
     rewriteMenu.appendChild(btn);
@@ -706,15 +712,36 @@ export async function renderEditorBubble(noteId) {
   speechSource.style.display = 'none';
   body.appendChild(speechSource);
   readBtn.addEventListener('click', () => {
-    try {
-      const nativePlayBtn = bubble?.querySelector(`.${SELECTORS.CLASS_TRANSLATE_BTN}`) ? null : null; // placeholder to ensure SELECTORS imported
-    } catch {}
     speechSource.textContent = String(contentArea.value || '');
-    // Reuse native speech UI by targeting its play button so Stop appears
-    const nativePlayBtn = bubble ? bubble.querySelector('.msg-speech-btn') : null;
-    const ev = new CustomEvent('speech-toggle', { bubbles: true, composed: true, detail: { element: speechSource, button: nativePlayBtn || readBtn } });
+    // Reuse native speech service; drive state via this custom Read button
+    const ev = new CustomEvent('speech-toggle', { bubbles: true, composed: true, detail: { element: speechSource, button: readBtn } });
     document.dispatchEvent(ev);
   });
+
+  // Custom Stop button (Option B): appears beside Read when speaking; reuses native stop
+  const stopBtn = document.createElement('button');
+  stopBtn.innerHTML = '⏹';
+  stopBtn.style.background = 'none';
+  stopBtn.style.border = 'none';
+  stopBtn.style.cursor = 'pointer';
+  stopBtn.style.opacity = '0.6';
+  stopBtn.style.padding = '2px 4px';
+  stopBtn.style.display = 'none';
+  stopBtn.style.alignItems = 'center';
+  stopBtn.style.justifyContent = 'center';
+  stopBtn.title = 'Stop';
+  stopBtn.addEventListener('mouseenter', () => stopBtn.style.opacity = '1');
+  stopBtn.addEventListener('mouseleave', () => stopBtn.style.opacity = '0.6');
+  stopBtn.addEventListener('click', () => {
+    const ev = new CustomEvent('speech-stop', { bubbles: true, composed: true });
+    document.dispatchEvent(ev);
+  });
+
+  // React to native speech events dispatched on the button we pass (readBtn)
+  readBtn.addEventListener('speech-started', () => { stopBtn.style.display = 'inline-flex'; });
+  readBtn.addEventListener('speech-paused', () => { stopBtn.style.display = 'inline-flex'; });
+  readBtn.addEventListener('speech-resumed', () => { stopBtn.style.display = 'inline-flex'; });
+  readBtn.addEventListener('speech-ended', () => { stopBtn.style.display = 'none'; });
 
   // Translate button (icon-only) that triggers native translate menu/UI
   const translateHdrBtn = document.createElement('button');
@@ -737,6 +764,18 @@ export async function renderEditorBubble(noteId) {
     const nativeTranslateBtn = bubble ? bubble.querySelector(`.${SELECTORS.CLASS_TRANSLATE_BTN}`) : null;
     if (nativeTranslateBtn) {
       nativeTranslateBtn.click();
+      // Reposition the translate menu to appear under the custom button
+      setTimeout(() => {
+        const menu = bubble ? bubble.querySelector(`.${SELECTORS.CLASS_TRANSLATE_MENU}`) : null;
+        if (!menu) return;
+        const btnRect = translateHdrBtn.getBoundingClientRect();
+        const bubbleRect = bubble.getBoundingClientRect();
+        const top = (btnRect.bottom - bubbleRect.top) + 6;
+        const left = (btnRect.left - bubbleRect.left);
+        menu.style.right = 'auto';
+        menu.style.left = `${Math.max(6, left)}px`;
+        menu.style.top = `${Math.max(36, top)}px`;
+      }, 0);
     }
   });
 
@@ -780,8 +819,7 @@ export async function renderEditorBubble(noteId) {
   genBtn.addEventListener('click', async () => {
     const prompt = promptUser('Describe what to generate');
     if (!prompt) return;
-    const bubbleEl = body.parentElement;
-    startPulsing(bubbleEl);
+    startProcessing('Generating');
     try {
       const res = await generateTextFromPrompt(prompt);
       if (res && res.ok) {
@@ -790,7 +828,7 @@ export async function renderEditorBubble(noteId) {
         await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
       }
     } finally {
-      stopPulsing(bubbleEl);
+      stopProcessing();
     }
   });
   // Helper prompt wrapper to avoid shadowing window.prompt accidentally
@@ -836,6 +874,7 @@ export async function renderEditorBubble(noteId) {
   actions.appendChild(genBtn);
   actions.appendChild(askBtn);
   actions.appendChild(readBtn);
+  actions.appendChild(stopBtn);
   actions.appendChild(translateHdrBtn);
   actions.appendChild(proofBtn);
   actions.appendChild(rewriteBtn);
@@ -934,6 +973,33 @@ export async function renderEditorBubble(noteId) {
 
   updateStats();
 
+  // Processing animation helpers (combined pulsing + status dots)
+  let processingInterval = null;
+  function startProcessing(label) {
+    const bubbleEl = body.parentElement;
+    startPulsing(bubbleEl);
+    try { if (processingInterval) { clearInterval(processingInterval); processingInterval = null; } } catch {}
+    let dots = 0;
+    saveIndicator.style.opacity = '1';
+    saveIndicator.textContent = `${label}`;
+    processingInterval = setInterval(() => {
+      try {
+        dots = (dots + 1) % 4;
+        const trail = dots === 0 ? '' : '.'.repeat(dots);
+        saveIndicator.textContent = `${label}${trail}`;
+      } catch {}
+    }, 400);
+  }
+
+  function stopProcessing(finalText) {
+    const bubbleEl = body.parentElement;
+    stopPulsing(bubbleEl);
+    try { if (processingInterval) { clearInterval(processingInterval); processingInterval = null; } } catch {}
+    saveIndicator.textContent = finalText || '✓ Done';
+    saveIndicator.style.opacity = '1';
+    setTimeout(() => { try { saveIndicator.style.opacity = '0'; } catch {} }, 1200);
+  }
+
   // Position rewrite menu relative to headerRow and insert header above body
   headerRow.style.position = 'relative';
   headerRow.appendChild(rewriteMenu);
@@ -945,6 +1011,126 @@ export async function renderEditorBubble(noteId) {
   body.appendChild(nameInput);
   body.appendChild(contentArea);
   body.appendChild(statusBar);
+
+  // -------------------------------------------------------------
+  // Intercept native translate menu clicks for ChromePad editor
+  // - Prevent native handler from replacing .msg-body
+  // - Apply translation to textarea only
+  // - Maintain bubble dataset for language
+  // - Close menu after handling
+  // -------------------------------------------------------------
+  function handleTranslateMenuClickCapture(ev) {
+    try {
+      const target = ev.target;
+      if (!(target instanceof HTMLElement)) return;
+      const menu = bubble ? bubble.querySelector(`.${SELECTORS.CLASS_TRANSLATE_MENU}`) : null;
+      if (!menu || !menu.contains(target)) return;
+
+      // Find the clicked translate item button
+      const itemBtn = target.closest(`.${SELECTORS.CLASS_TRANSLATE_ITEM}`);
+      if (!itemBtn) return;
+
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      const action = itemBtn.dataset.action || '';
+      if (action === 'show-original') {
+        // Close menu immediately for better UX
+        menu.style.display = 'none';
+        if (typeof bubble.dataset.originalText === 'string') {
+          contentArea.value = String(bubble.dataset.originalText || '');
+          updateStats();
+          bubble.dataset.currentLang = '';
+          // Stop active speech so next play uses new language
+          const stopEvt = new CustomEvent('speech-stop', { bubbles: true, composed: true });
+          document.dispatchEvent(stopEvt);
+        }
+        return;
+      }
+
+      const code = itemBtn.dataset.lang || '';
+      if (!code) { menu.style.display = 'none'; return; }
+
+      // Close menu immediately on selection for better UX
+      menu.style.display = 'none';
+
+      (async () => {
+        // Cache original once
+        if (typeof bubble.dataset.originalText !== 'string') {
+          bubble.dataset.originalText = String(contentArea.value || '');
+        }
+        const orig = String(bubble.dataset.originalText || contentArea.value || '');
+        const cfg2 = window.CONFIG?.translation || {};
+        const lowerCode = String(code || '').toLowerCase();
+        const langLabel = (Array.isArray(cfg2.languages) ? (cfg2.languages.find(l => String(l.code || '').toLowerCase() === lowerCode)?.name) : null) || String(code || '').toUpperCase();
+        startProcessing(`Translating to ${langLabel}`);
+        try {
+          const res = await translateText(orig, { sourceLanguage: String(cfg2.defaultSourceLanguage || 'auto'), targetLanguage: code });
+          if (res && res.ok) {
+            contentArea.value = res.text || '';
+            updateStats();
+            bubble.dataset.currentLang = code;
+            await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
+            // Stop active speech so next play uses new language
+            const stopEvt = new CustomEvent('speech-stop', { bubbles: true, composed: true });
+            document.dispatchEvent(stopEvt);
+            stopProcessing('✓ Translated');
+          } else {
+            const errLabel = (window.CONFIG?.translation?.labels?.translationError) || 'Translation failed';
+            stopProcessing(`⚠ ${errLabel}`);
+          }
+        } catch (err) {
+          // Translation errors are handled via stopProcessing above
+          log.error('Translation failed:', err);
+        }
+      })();
+    } catch (err) {
+      // Safely handle any unexpected errors in menu click handling
+      log.warn('Translate menu click handler error:', err);
+    }
+  }
+
+  if (bubble) {
+    // Capture phase ensures we run before native handler in ui.js
+    bubble.addEventListener('click', handleTranslateMenuClickCapture, true);
+  }
+
+  // -------------------------------------------------------------
+  // Intercept native speech events within this bubble and reroute
+  // to our hidden speech source and custom Read/Stop buttons
+  // -------------------------------------------------------------
+  function handleSpeechToggleCapture(e) {
+    try {
+      const detail = e && e.detail ? e.detail : {};
+      if (detail && detail.element === speechSource && detail.button === readBtn) {
+        // This is our re-dispatched event; allow it through
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      speechSource.textContent = String(contentArea.value || '');
+      const ev2 = new CustomEvent('speech-toggle', { bubbles: true, composed: true, detail: { element: speechSource, button: readBtn } });
+      document.dispatchEvent(ev2);
+    } catch (err) {
+      log.warn('Speech toggle capture error:', err);
+    }
+  }
+
+  function handleSpeechStopCapture(e) {
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+      const ev2 = new CustomEvent('speech-stop', { bubbles: true, composed: true });
+      document.dispatchEvent(ev2);
+    } catch (err) {
+      log.warn('Speech stop capture error:', err);
+    }
+  }
+
+  if (bubble) {
+    bubble.addEventListener('speech-toggle', handleSpeechToggleCapture, true);
+    bubble.addEventListener('speech-stop', handleSpeechStopCapture, true);
+  }
 
   // Auto-save with visual feedback
   const debouncedSave = debounce(async () => {
@@ -983,8 +1169,7 @@ export async function renderEditorBubble(noteId) {
   });
 
   proofBtn.addEventListener('click', async () => {
-    const bubbleEl = body.parentElement;
-    startPulsing(bubbleEl);
+    startProcessing('Proofreading');
     try {
       const res = await proofreadText(contentArea.value || '');
       if (res && res.ok) {
@@ -993,7 +1178,7 @@ export async function renderEditorBubble(noteId) {
         await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
       }
     } finally {
-      stopPulsing(bubbleEl);
+      stopProcessing();
     }
   });
 
