@@ -12,11 +12,50 @@
 //   Change line 120 to adjust (e.g., 2, 4, 5, etc.)
 // =============================================================================
 
-import { appendMessage, scrollToBottom } from '../../ui/ui.js';
+import { appendMessage, scrollToBottom, addExternalContext } from '../../ui/ui.js';
 import { debounce } from '../../core/utils.js';
 import { logger } from '../../core/logger.js';
+import { proofreadText, rewriteText, generateTextFromPrompt } from '../../services/ai_editing.js';
 
 const log = logger.create('ChromePad');
+
+// -------------------------------------------------------------
+// Processing animation (Option 2: Pulsing Glow)
+// -------------------------------------------------------------
+let pulsingStylesInstalled = false;
+function installPulsingStyles() {
+  if (pulsingStylesInstalled) return;
+  pulsingStylesInstalled = true;
+  const style = document.createElement('style');
+  style.setAttribute('data-chromepad-pulsing', '');
+  style.textContent = `
+    @keyframes chromepad-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.20); }
+      50%       { box-shadow: 0 0 0 4px rgba(255,255,255,0.32); }
+    }
+    .chromepad-pulsing {
+      animation: chromepad-pulse 1.8s ease-in-out infinite;
+      position: relative;
+      border-radius: 12px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function startPulsing(bubbleEl) {
+  try {
+    installPulsingStyles();
+    if (!bubbleEl) return;
+    bubbleEl.classList.add('chromepad-pulsing');
+  } catch {}
+}
+
+function stopPulsing(bubbleEl) {
+  try {
+    if (!bubbleEl) return;
+    bubbleEl.classList.remove('chromepad-pulsing');
+  } catch {}
+}
 
 // -----------------------------
 // Storage helpers
@@ -402,6 +441,31 @@ export async function renderNotesListBubble() {
         scrollToBottom();
       });
 
+      // Ask iChrome (add note as context pill)
+      const askBtn = document.createElement('button');
+      askBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a4 4 0 0 1-4 4H9l-4 4v-4H5a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4z"/>
+      </svg>`;
+      askBtn.style.background = 'none';
+      askBtn.style.border = 'none';
+      askBtn.style.cursor = 'pointer';
+      askBtn.style.padding = '2px 4px';
+      askBtn.style.opacity = '0.6';
+      askBtn.style.transition = 'opacity 0.15s ease';
+      askBtn.style.display = 'inline-flex';
+      askBtn.style.alignItems = 'center';
+      askBtn.style.justifyContent = 'center';
+      askBtn.title = 'Ask iChrome';
+      askBtn.addEventListener('mouseenter', () => askBtn.style.opacity = '1');
+      askBtn.addEventListener('mouseleave', () => askBtn.style.opacity = '0.6');
+      askBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const label = `📄 ${n.name || 'Untitled'}`;
+        const text = (n.content || '').trim();
+        if (text) addExternalContext(text.slice(0, 2000), label);
+      });
+
+      actions.appendChild(askBtn);
       actions.appendChild(editBtn);
       actions.appendChild(delBtn);
 
@@ -515,8 +579,186 @@ export async function renderEditorBubble(noteId) {
   delBtn.addEventListener('mouseenter', () => delBtn.style.opacity = '1');
   delBtn.addEventListener('mouseleave', () => delBtn.style.opacity = '0.6');
 
+  // Proofread button
+  const proofBtn = document.createElement('button');
+  proofBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 6L9 17l-5-5" />
+  </svg>`;
+  proofBtn.style.background = 'none';
+  proofBtn.style.border = 'none';
+  proofBtn.style.cursor = 'pointer';
+  proofBtn.style.opacity = '0.6';
+  proofBtn.style.padding = '2px 4px';
+  proofBtn.style.display = 'inline-flex';
+  proofBtn.style.alignItems = 'center';
+  proofBtn.style.justifyContent = 'center';
+  proofBtn.title = 'Proofread';
+  proofBtn.addEventListener('mouseenter', () => proofBtn.style.opacity = '1');
+  proofBtn.addEventListener('mouseleave', () => proofBtn.style.opacity = '0.6');
+
+  // Rewrite button with small inline menu
+  const rewriteBtn = document.createElement('button');
+  rewriteBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12a9 9 0 1 0 9-9"/>
+    <polyline points="3 3 3 9 9 9"/>
+  </svg>`;
+  rewriteBtn.style.background = 'none';
+  rewriteBtn.style.border = 'none';
+  rewriteBtn.style.cursor = 'pointer';
+  rewriteBtn.style.opacity = '0.6';
+  rewriteBtn.style.padding = '2px 4px';
+  rewriteBtn.style.display = 'inline-flex';
+  rewriteBtn.style.alignItems = 'center';
+  rewriteBtn.style.justifyContent = 'center';
+  rewriteBtn.title = 'Rewrite';
+  rewriteBtn.addEventListener('mouseenter', () => rewriteBtn.style.opacity = '1');
+  rewriteBtn.addEventListener('mouseleave', () => rewriteBtn.style.opacity = '0.6');
+
+  const rewriteMenu = document.createElement('div');
+  rewriteMenu.style.position = 'absolute';
+  rewriteMenu.style.top = '32px';
+  rewriteMenu.style.right = '8px';
+  rewriteMenu.style.border = '1px solid rgba(255,255,255,0.25)';
+  rewriteMenu.style.background = 'rgba(0,0,0,0.85)';
+  rewriteMenu.style.color = '#fff';
+  rewriteMenu.style.borderRadius = '8px';
+  rewriteMenu.style.padding = '6px';
+  rewriteMenu.style.display = 'none';
+  rewriteMenu.style.zIndex = '50';
+
+  function addRewriteOption(label, mode) {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.display = 'block';
+    btn.style.width = '100%';
+    btn.style.textAlign = 'left';
+    btn.style.background = 'transparent';
+    btn.style.border = '0';
+    btn.style.color = 'inherit';
+    btn.style.cursor = 'pointer';
+    btn.style.padding = '6px 8px';
+    btn.addEventListener('mouseenter', () => btn.style.background = 'rgba(255,255,255,0.1)');
+    btn.addEventListener('mouseleave', () => btn.style.background = 'transparent');
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      rewriteMenu.style.display = 'none';
+      const bubbleEl = body.parentElement;
+      startPulsing(bubbleEl);
+      try {
+        const res = await rewriteText(contentArea.value || '', mode);
+        if (res && res.ok) {
+          contentArea.value = res.text || '';
+          updateStats();
+          await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
+        }
+      } finally {
+        stopPulsing(bubbleEl);
+      }
+    });
+    rewriteMenu.appendChild(btn);
+  }
+
+  addRewriteOption('More formal', 'formal');
+  addRewriteOption('More casual', 'casual');
+  addRewriteOption('Shorter', 'shorter');
+  addRewriteOption('Longer', 'longer');
+
+  rewriteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const visible = rewriteMenu.style.display === 'block';
+    rewriteMenu.style.display = visible ? 'none' : 'block';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (rewriteMenu.style.display === 'block') {
+      rewriteMenu.style.display = 'none';
+    }
+  });
+
+  // Ask iChrome button to add current note as context
+  const askBtn = document.createElement('button');
+  askBtn.textContent = 'Ask iChrome';
+  askBtn.className = 'send-btn';
+  askBtn.style.padding = '2px 8px';
+  askBtn.title = 'Add this note as chat context';
+
+  askBtn.addEventListener('click', async () => {
+    const label = `📄 ${nameInput.value || 'Untitled'}`;
+    const text = (contentArea.value || '').trim();
+    if (text) {
+      addExternalContext(text.slice(0, 2000), label);
+    }
+  });
+
+  // Generate button
+  const genBtn = document.createElement('button');
+  genBtn.textContent = 'Generate';
+  genBtn.className = 'send-btn';
+  genBtn.style.padding = '2px 8px';
+  genBtn.title = 'Generate content into this note';
+  genBtn.addEventListener('click', async () => {
+    const prompt = promptUser('Describe what to generate');
+    if (!prompt) return;
+    const bubbleEl = body.parentElement;
+    startPulsing(bubbleEl);
+    try {
+      const res = await generateTextFromPrompt(prompt);
+      if (res && res.ok) {
+        contentArea.value = (contentArea.value || '') + (contentArea.value ? '\n\n' : '') + (res.text || '');
+        updateStats();
+        await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
+      }
+    } finally {
+      stopPulsing(bubbleEl);
+    }
+  });
+  // Helper prompt wrapper to avoid shadowing window.prompt accidentally
+  function promptUser(message) {
+    try { return window.prompt(message || ''); } catch { return null; }
+  }
+
+  // Min/Max toggle button (collapse/expand note body)
+  let isCollapsed = false;
+  const minMaxBtn = document.createElement('button');
+  minMaxBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="6 9 12 15 18 9"></polyline>
+  </svg>`; // down chevron means can expand; toggles
+  minMaxBtn.style.background = 'none';
+  minMaxBtn.style.border = 'none';
+  minMaxBtn.style.cursor = 'pointer';
+  minMaxBtn.style.opacity = '0.6';
+  minMaxBtn.style.padding = '2px 4px';
+  minMaxBtn.style.display = 'inline-flex';
+  minMaxBtn.style.alignItems = 'center';
+  minMaxBtn.style.justifyContent = 'center';
+  minMaxBtn.title = 'Minimize/Maximize';
+  minMaxBtn.addEventListener('mouseenter', () => minMaxBtn.style.opacity = '1');
+  minMaxBtn.addEventListener('mouseleave', () => minMaxBtn.style.opacity = '0.6');
+
+  function setCollapsed(next) {
+    isCollapsed = !!next;
+    // Close rewrite menu if open
+    rewriteMenu.style.display = 'none';
+    const display = isCollapsed ? 'none' : '';
+    nameInput.style.display = display;
+    contentArea.style.display = display;
+    statusBar.style.display = display || 'flex';
+    // Update icon: up chevron when expanded, down when collapsed
+    minMaxBtn.innerHTML = isCollapsed
+      ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>`
+      : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+  }
+
+  minMaxBtn.addEventListener('click', () => setCollapsed(!isCollapsed));
+
+  // ORDER: Generate, Ask iChrome, Proofread, Rewrite, Save, Delete, Min/Max
+  actions.appendChild(genBtn);
+  actions.appendChild(askBtn);
+  actions.appendChild(proofBtn);
+  actions.appendChild(rewriteBtn);
   actions.appendChild(saveBtn);
   actions.appendChild(delBtn);
+  actions.appendChild(minMaxBtn);
 
   headerRow.appendChild(backBtn);
   headerRow.appendChild(actions);
@@ -609,6 +851,9 @@ export async function renderEditorBubble(noteId) {
   updateStats();
 
   body.appendChild(headerRow);
+  // Position rewrite menu relative to headerRow
+  headerRow.style.position = 'relative';
+  headerRow.appendChild(rewriteMenu);
   body.appendChild(nameInput);
   body.appendChild(contentArea);
   body.appendChild(statusBar);
@@ -647,6 +892,21 @@ export async function renderEditorBubble(noteId) {
     setTimeout(() => {
       saveIndicator.style.opacity = '0';
     }, 1500);
+  });
+
+  proofBtn.addEventListener('click', async () => {
+    const bubbleEl = body.parentElement;
+    startPulsing(bubbleEl);
+    try {
+      const res = await proofreadText(contentArea.value || '');
+      if (res && res.ok) {
+        contentArea.value = res.text || '';
+        updateStats();
+        await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
+      }
+    } finally {
+      stopPulsing(bubbleEl);
+    }
   });
 
   backBtn.addEventListener('click', async () => {

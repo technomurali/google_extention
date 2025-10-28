@@ -340,6 +340,27 @@ function tryAddCurrentSelectionToContext() {
   sel.removeAllRanges();
 }
 
+/**
+ * Adds an external context pill (e.g., from ChromePad) with an optional label
+ * @param {string} text - Context text snippet/content
+ * @param {string} [label] - Optional label to display on pill
+ */
+export function addExternalContext(text, label) {
+  const cfg = getConfigContext();
+  if (!text) return;
+  if (selectedContexts.length >= cfg.maxItems) return;
+
+  const ctx = {
+    id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    text: String(text),
+    bubbleId: 'external',
+    highlightEl: null,
+    label: label ? String(label) : undefined,
+  };
+  selectedContexts.push(ctx);
+  updateContextPillsUI();
+}
+
 function truncateForPill(text, maxChars) {
   if (text.length <= maxChars) return text;
   return text.slice(0, Math.max(0, maxChars - 1)) + '…';
@@ -359,9 +380,10 @@ function updateContextPillsUI() {
   selectedContexts.forEach((ctx, idx) => {
     const pill = document.createElement('span');
     pill.className = 'pill';
-    pill.title = ctx.text;
+    pill.title = ctx.label ? `${ctx.label}\n\n${ctx.text}` : ctx.text;
     pill.dataset.ctxId = ctx.id;
-    pill.textContent = truncateForPill(ctx.text, cfg.pillTruncateChars);
+    const display = ctx.label ? ctx.label : ctx.text;
+    pill.textContent = truncateForPill(display, cfg.pillTruncateChars);
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove';
@@ -450,6 +472,7 @@ export function getSelectedContexts() {
     id: c.id,
     bubbleId: c.bubbleId,
     text: c.text.length > cfg.maxSnippetChars ? c.text.slice(0, cfg.maxSnippetChars) : c.text,
+    label: c.label || undefined,
   }));
   return trimmed;
 }

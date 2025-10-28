@@ -75,6 +75,16 @@ export function getLanguageOptions() {
   return languageOptions;
 }
 
+function ensureOutputLanguage(options = {}) {
+  const base = getLanguageOptions();
+  const out = { ...base, ...options };
+  // Deep-ensure output.language exists
+  const lang = (base && base.output && base.output.language) || selectOutputLanguage();
+  if (!out.output) out.output = {};
+  if (!out.output.language) out.output.language = lang;
+  return out;
+}
+
 /**
  * Checks AI availability status
  * @returns {Promise<string>} Availability status
@@ -160,11 +170,24 @@ export async function sendPrompt(prompt, options = {}) {
 
   try {
     log.debug('Sending prompt to AI');
-    const mergedOptions = { ...getLanguageOptions(), ...options };
+    let mergedOptions = ensureOutputLanguage(options);
     const response = await session.prompt(prompt, mergedOptions);
     log.debug('Received AI response');
     return response;
   } catch (error) {
+    // Retry once with enforced 'en' language if output missing
+    const msg = String(error && (error.message || error)) || '';
+    if (msg.toLowerCase().includes('no output language')) {
+      try {
+        const retryOptions = ensureOutputLanguage({ output: { language: 'en' } });
+        const response = await session.prompt(prompt, retryOptions);
+        return response;
+      } catch (e2) {
+        const message2 = getErrorMessage(e2, 'AI prompt failed');
+        log.error('Prompt error (retry):', message2);
+        throw new AIError(message2);
+      }
+    }
     const message = getErrorMessage(error, 'AI prompt failed');
     log.error('Prompt error:', message);
     throw new AIError(message);
@@ -196,11 +219,25 @@ export async function sendStreamingPrompt(prompt, options = {}) {
 
   try {
     log.debug('Sending streaming prompt to AI');
-    const mergedOptions = { ...getLanguageOptions(), ...options };
-    const stream = session.promptStreaming(prompt, mergedOptions);
+    let mergedOptions = ensureOutputLanguage(options);
+    let stream = session.promptStreaming(prompt, mergedOptions);
     log.debug('Streaming started');
     return stream;
   } catch (error) {
+    // Retry once with enforced 'en' language
+    const msg = String(error && (error.message || error)) || '';
+    if (msg.toLowerCase().includes('no output language')) {
+      try {
+        const retryOptions = ensureOutputLanguage({ output: { language: 'en' } });
+        const stream2 = session.promptStreaming(prompt, retryOptions);
+        log.debug('Streaming started (retry)');
+        return stream2;
+      } catch (e2) {
+        const message2 = getErrorMessage(e2, 'AI streaming failed');
+        log.error('Streaming error (retry):', message2);
+        throw new AIError(message2);
+      }
+    }
     const message = getErrorMessage(error, 'AI streaming failed');
     log.error('Streaming error:', message);
     throw new AIError(message);
