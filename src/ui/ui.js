@@ -1463,14 +1463,20 @@ function findToolByMention(mentionText) {
 
 function insertOrReplaceLeadingMention(inputEl, mentionWithSpace) {
   const value = inputEl.value || '';
-  const leading = value.match(/^@\w+\b\s*/);
+  // Match @ with optional word characters (handles both "@" and "@word")
+  const leading = value.match(/^@\w*\s*/);
   if (leading) {
+    // Replace the partial/complete mention
     inputEl.value = mentionWithSpace + value.slice(leading[0].length);
   } else {
+    // No leading @, prepend the mention
     inputEl.value = mentionWithSpace + value;
   }
-  // Move caret to end
-  try { inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length; } catch {}
+  // Move caret to after the inserted mention
+  const newPos = mentionWithSpace.length;
+  try { 
+    inputEl.selectionStart = inputEl.selectionEnd = newPos;
+  } catch {}
 }
 
 export function parseLeadingToolMention(text) {
@@ -1600,23 +1606,45 @@ export function setupToolMentions() {
     if (!cfgEnabled) return;
     const isMenuOpen = menuEl && menuEl.style.display === 'block';
     if (isMenuOpen) {
-      if (ev.key === 'ArrowDown') { ev.preventDefault(); activeIndex = Math.min(filtered.length - 1, activeIndex + 1); renderMenu(); return; }
-      if (ev.key === 'ArrowUp') { ev.preventDefault(); activeIndex = Math.max(0, activeIndex - 1); renderMenu(); return; }
+      if (ev.key === 'ArrowDown') { 
+        ev.preventDefault(); 
+        ev.stopPropagation();
+        activeIndex = Math.min(filtered.length - 1, activeIndex + 1); 
+        renderMenu(); 
+        return; 
+      }
+      if (ev.key === 'ArrowUp') { 
+        ev.preventDefault(); 
+        ev.stopPropagation();
+        activeIndex = Math.max(0, activeIndex - 1); 
+        renderMenu(); 
+        return; 
+      }
       if (ev.key === 'Enter' || ev.key === 'Tab') {
+        // ALWAYS prevent default when menu is open, regardless of selection
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
         if (activeIndex >= 0 && filtered[activeIndex]) {
-          ev.preventDefault();
           insertOrReplaceLeadingMention(inputEl, filtered[activeIndex].label + ' ');
           hideMenu();
+          // Refocus input so user can continue typing
+          inputEl.focus();
         }
         return;
       }
-      if (ev.key === 'Escape') { ev.preventDefault(); hideMenu(); return; }
+      if (ev.key === 'Escape') { 
+        ev.preventDefault(); 
+        ev.stopPropagation();
+        hideMenu(); 
+        return; 
+      }
     }
     if (ev.key === '@') {
       // Open menu fresh
       setTimeout(() => { updateFiltered(''); }, 0);
     }
-  }, { signal: abortController.signal });
+  }, { signal: abortController.signal, capture: true });
 
   inputEl.addEventListener('input', () => {
     const q = getMentionQueryAtCaret();
@@ -1717,4 +1745,5 @@ if (typeof module !== 'undefined' && module.exports) {
     hideOnboardingHelp,
   };
 }
+
 
