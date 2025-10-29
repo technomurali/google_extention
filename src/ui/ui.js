@@ -156,6 +156,9 @@ let onboardingEl = null;
  */
 let selectedContexts = [];
 let ctxAddBtnEl = null;
+// Track tool switching around context pills
+let previousToolBeforeContext = null; // tool to restore after manual clear
+let isProgrammaticContextClear = false; // prevent restore on auto-clear (after send)
 
 // Translation recent memory (session-scoped)
 let recentLanguages = [];
@@ -338,6 +341,13 @@ function tryAddCurrentSelectionToContext() {
   updateContextPillsUI();
   hideCtxAddButton();
   sel.removeAllRanges();
+
+  // Always switch to @GeneralChat when a pill is added
+  if (previousToolBeforeContext === null && selectedContexts.length === 1) {
+    // Remember the tool to restore later (manual clear only)
+    previousToolBeforeContext = getSelectedTool();
+  }
+  try { setSelectedTool(TOOLS.CHAT); } catch {}
 }
 
 /**
@@ -359,6 +369,12 @@ export function addExternalContext(text, label) {
   };
   selectedContexts.push(ctx);
   updateContextPillsUI();
+
+  // Always switch to @GeneralChat when a pill is added
+  if (previousToolBeforeContext === null && selectedContexts.length === 1) {
+    previousToolBeforeContext = getSelectedTool();
+  }
+  try { setSelectedTool(TOOLS.CHAT); } catch {}
 }
 
 function truncateForPill(text, maxChars) {
@@ -464,6 +480,12 @@ function clearAllContexts() {
   });
   selectedContexts = [];
   updateContextPillsUI();
+
+  // Restore previous tool only on manual clear
+  if (!isProgrammaticContextClear && previousToolBeforeContext !== null) {
+    try { setSelectedTool(previousToolBeforeContext); } catch {}
+    previousToolBeforeContext = null;
+  }
 }
 
 export function getSelectedContexts() {
@@ -478,7 +500,13 @@ export function getSelectedContexts() {
 }
 
 export function clearSelectedContextsAfterSend() {
-  clearAllContexts();
+  // Programmatic clear (after send) should NOT restore previous tool
+  isProgrammaticContextClear = true;
+  try {
+    clearAllContexts();
+  } finally {
+    isProgrammaticContextClear = false;
+  }
 }
 
 function handleSelectionChange() {

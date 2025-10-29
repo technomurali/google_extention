@@ -303,6 +303,20 @@ const CONFIG = {
   },
 
   // ============================================
+  // CHROMEPAD (NOTE-TAKING FEATURE)
+  // Configuration for ChromePad editor and typewriter animation
+  // ============================================
+  chromePad: {
+    typewriterEffect: {
+      enabled: true,           // Enable/disable typewriter animation for generated text
+      delayMs: 8,             // Milliseconds between characters (matches chat animation)
+      minLength: 50,          // Only animate if generated text exceeds this many characters
+      allowInterrupt: true,   // Allow user to interrupt animation by typing
+      maxAnimateChars: 5000,  // Skip animation if result exceeds this (performance optimization)
+    },
+  },
+
+  // ============================================
   // Z-INDEX (Layer Priority)
   // Controls which elements appear on top of others
   // Higher numbers = closer to user (on top)

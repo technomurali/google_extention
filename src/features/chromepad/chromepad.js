@@ -816,25 +816,11 @@ export async function renderEditorBubble(noteId) {
   genBtn.title = 'Generate content into this note';
   genBtn.addEventListener('mouseenter', () => genBtn.style.opacity = '1');
   genBtn.addEventListener('mouseleave', () => genBtn.style.opacity = '0.6');
-  genBtn.addEventListener('click', async () => {
-    const prompt = promptUser('Describe what to generate');
-    if (!prompt) return;
-    startProcessing('Generating');
-    try {
-      const res = await generateTextFromPrompt(prompt);
-      if (res && res.ok) {
-        contentArea.value = (contentArea.value || '') + (contentArea.value ? '\n\n' : '') + (res.text || '');
-        updateStats();
-        await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
-      }
-    } finally {
-      stopProcessing();
-    }
+  genBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openGeneratePrompt();
   });
-  // Helper prompt wrapper to avoid shadowing window.prompt accidentally
-  function promptUser(message) {
-    try { return window.prompt(message || ''); } catch { return null; }
-  }
 
   // Min/Max toggle button (bubble-level minimize/restore)
   const minMaxBtn = document.createElement('button');
@@ -937,6 +923,318 @@ export async function renderEditorBubble(noteId) {
     contentArea.style.borderColor = 'rgba(255,255,255,0.15)';
   });
 
+  // Inline generate prompt panel (hidden by default)
+  const genPromptWrapper = document.createElement('div');
+  genPromptWrapper.style.display = 'none';
+  genPromptWrapper.style.flexDirection = 'column';
+  genPromptWrapper.style.gap = '6px';
+  genPromptWrapper.style.background = 'rgba(255,255,255,0.05)';
+  genPromptWrapper.style.border = '1px solid rgba(255,255,255,0.12)';
+  genPromptWrapper.style.borderRadius = '6px';
+  genPromptWrapper.style.padding = '10px';
+  genPromptWrapper.style.marginTop = '8px';
+  genPromptWrapper.style.transition = 'opacity 0.18s ease, max-height 0.18s ease';
+  genPromptWrapper.style.overflow = 'hidden';
+  genPromptWrapper.style.opacity = '0';
+  genPromptWrapper.style.maxHeight = '0px';
+
+  let genPromptVisible = false;
+  let genPromptHideTimer = null;
+  let genPromptBusy = false;
+  let currentAnimationAbort = null;
+
+  // Typewriter animation for generated text
+  async function animateGeneratedText(textarea, newText, append = true) {
+    const cfg = (window.CONFIG && window.CONFIG.chromePad && window.CONFIG.chromePad.typewriterEffect) || {};
+    const enabled = cfg.enabled !== false;
+    const minLength = Number(cfg.minLength) || 50;
+    const maxChars = Number(cfg.maxAnimateChars) || 5000;
+    const delayMs = Number(cfg.delayMs) || 8;
+
+    const textToAdd = String(newText || '');
+
+    // Skip animation if disabled, text too short, or too long
+    if (!enabled || textToAdd.length < minLength || textToAdd.length > maxChars) {
+      if (append) {
+        const existing = textarea.value || '';
+        const prefix = existing ? '\n\n' : '';
+        textarea.value = `${existing}${prefix}${textToAdd}`;
+      } else {
+        textarea.value = textToAdd;
+      }
+      updateStats();
+      return;
+    }
+
+    // Setup abort controller
+    if (currentAnimationAbort) {
+      currentAnimationAbort.abort();
+    }
+    currentAnimationAbort = new AbortController();
+    const signal = currentAnimationAbort.signal;
+
+    const existingText = textarea.value || '';
+    const prefix = (append && existingText) ? '\n\n' : '';
+    const startPos = (existingText + prefix).length;
+
+    // Add prefix first
+    if (prefix) {
+      textarea.value = existingText + prefix;
+    }
+
+    try {
+      await typeCharByChar(textarea, textToAdd, startPos, delayMs, signal);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        // Show full text immediately on abort
+        textarea.value = existingText + prefix + textToAdd;
+        updateStats();
+      }
+    } finally {
+      currentAnimationAbort = null;
+    }
+  }
+
+  async function typeCharByChar(textarea, text, startPos, delayMs, signal) {
+    return new Promise((resolve, reject) => {
+      const chars = String(text || '');
+      let idx = 0;
+
+      function typeNext() {
+        if (signal.aborted) {
+          reject(new DOMException('Animation aborted', 'AbortError'));
+          return;
+        }
+        if (idx >= chars.length) {
+          resolve();
+          return;
+        }
+
+        // Insert character
+        const before = textarea.value.substring(0, startPos + idx);
+        const after = textarea.value.substring(startPos + idx);
+        textarea.value = before + chars[idx] + after;
+        idx += 1;
+
+        // Update stats and scroll
+        updateStats();
+        textarea.scrollTop = textarea.scrollHeight;
+
+        setTimeout(typeNext, delayMs);
+      }
+
+      typeNext();
+    });
+  }
+
+  const genPromptLabel = document.createElement('div');
+  genPromptLabel.textContent = 'What should iChrome write?';
+  genPromptLabel.style.fontSize = '12px';
+  genPromptLabel.style.opacity = '0.75';
+
+  const genPromptInput = document.createElement('textarea');
+  genPromptInput.rows = 3;
+  genPromptInput.placeholder = 'Describe the content to add...';
+  genPromptInput.style.width = '100%';
+  genPromptInput.style.boxSizing = 'border-box';
+  genPromptInput.style.padding = '8px';
+  genPromptInput.style.fontSize = '13px';
+  genPromptInput.style.lineHeight = '1.4';
+  genPromptInput.style.border = '1px solid rgba(255,255,255,0.15)';
+  genPromptInput.style.borderRadius = '6px';
+  genPromptInput.style.background = 'rgba(0,0,0,0.35)';
+  genPromptInput.style.color = 'inherit';
+  genPromptInput.style.resize = 'vertical';
+  genPromptInput.style.outline = 'none';
+
+  genPromptInput.addEventListener('focus', () => {
+    genPromptInput.style.borderColor = 'rgba(255,255,255,0.25)';
+  });
+  genPromptInput.addEventListener('blur', () => {
+    genPromptInput.style.borderColor = 'rgba(255,255,255,0.15)';
+  });
+
+  // Row with input and arrow/stop button (chat-like)
+  const genPromptRow = document.createElement('div');
+  genPromptRow.style.display = 'flex';
+  genPromptRow.style.alignItems = 'center';
+  genPromptRow.style.gap = '8px';
+
+  genPromptInput.style.flex = '1 1 auto';
+
+  const genActionBtn = document.createElement('button');
+  genActionBtn.type = 'button';
+  genActionBtn.title = 'Generate';
+  genActionBtn.setAttribute('aria-label', 'Generate');
+  genActionBtn.style.background = 'rgba(123, 97, 255, 0.85)';
+  genActionBtn.style.color = '#fff';
+  genActionBtn.style.border = 'none';
+  genActionBtn.style.borderRadius = '6px';
+  genActionBtn.style.width = '32px';
+  genActionBtn.style.height = '32px';
+  genActionBtn.style.display = 'inline-flex';
+  genActionBtn.style.alignItems = 'center';
+  genActionBtn.style.justifyContent = 'center';
+  genActionBtn.style.cursor = 'pointer';
+  genActionBtn.style.transition = 'opacity 0.18s ease, transform 0.18s ease';
+
+  function setGenActionToSend() {
+    genActionBtn.title = 'Generate';
+    genActionBtn.setAttribute('aria-label', 'Generate');
+    genActionBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12L21 3L14 21L11 13L3 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  function setGenActionToStop() {
+    genActionBtn.title = 'Stop generating';
+    genActionBtn.setAttribute('aria-label', 'Stop generating');
+    genActionBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  }
+  setGenActionToSend();
+
+  genPromptRow.appendChild(genPromptInput);
+  genPromptRow.appendChild(genActionBtn);
+
+  genPromptWrapper.appendChild(genPromptLabel);
+  genPromptWrapper.appendChild(genPromptRow);
+
+  let genRunSeq = 0;
+  let genStopRequested = false;
+
+  function setGeneratePromptBusy(busy) {
+    genPromptBusy = busy;
+    genPromptInput.readOnly = busy;
+    if (busy) {
+      setGenActionToStop();
+      genActionBtn.style.opacity = '0.85';
+      genActionBtn.style.transform = 'translateY(0)';
+    } else {
+      setGenActionToSend();
+      genActionBtn.style.opacity = '1';
+      genActionBtn.style.transform = 'translateY(0)';
+    }
+  }
+
+  function openGeneratePrompt() {
+    if (genPromptHideTimer) {
+      clearTimeout(genPromptHideTimer);
+      genPromptHideTimer = null;
+    }
+    if (genPromptVisible) {
+      setTimeout(() => genPromptInput.focus(), 0);
+      return;
+    }
+    genPromptVisible = true;
+    genPromptWrapper.style.display = 'flex';
+    genPromptWrapper.style.opacity = '0';
+    genPromptWrapper.style.maxHeight = '0px';
+    requestAnimationFrame(() => {
+      genPromptWrapper.style.opacity = '1';
+      genPromptWrapper.style.maxHeight = '320px';
+    });
+    setTimeout(() => {
+      if (genPromptVisible) genPromptInput.focus();
+    }, 180);
+  }
+
+  function closeGeneratePrompt({ clear = true, focusEditor = false } = {}) {
+    if (!genPromptVisible) {
+      if (clear) genPromptInput.value = '';
+      if (focusEditor) setTimeout(() => contentArea.focus(), 0);
+      return;
+    }
+    genPromptVisible = false;
+    genPromptWrapper.style.opacity = '0';
+    genPromptWrapper.style.maxHeight = '0px';
+    genPromptHideTimer = setTimeout(() => {
+      if (!genPromptVisible) {
+        genPromptWrapper.style.display = 'none';
+        if (clear) genPromptInput.value = '';
+        if (focusEditor) contentArea.focus();
+      }
+      genPromptHideTimer = null;
+    }, 200);
+  }
+
+  async function submitGeneratePrompt() {
+    if (genPromptBusy) return;
+    const prompt = (genPromptInput.value || '').trim();
+    if (!prompt) {
+      genPromptInput.focus();
+      return;
+    }
+    const runId = (++genRunSeq);
+    genStopRequested = false;
+    setGeneratePromptBusy(true);
+    startProcessing('Generating');
+    let success = false;
+    try {
+      const res = await generateTextFromPrompt(prompt);
+      if (genStopRequested || runId !== genRunSeq) {
+        // Ignore late result
+        return;
+      }
+      if (res && res.ok) {
+        // Animate text appearance (or instant if config disabled/text too short)
+        await animateGeneratedText(contentArea, res.text || '', true);
+        await updateNote(noteId, { name: nameInput.value || 'Untitled', content: contentArea.value || '' });
+        stopProcessing('Generated');
+        success = true;
+      } else {
+        stopProcessing('Generate failed');
+      }
+    } catch (err) {
+      log.error('Generate prompt failed:', err);
+      if (!genStopRequested) stopProcessing('Generate failed');
+    } finally {
+      setGeneratePromptBusy(false);
+      if (success) {
+        closeGeneratePrompt({ clear: true, focusEditor: true });
+      } else if (!genStopRequested) {
+        openGeneratePrompt();
+        genPromptInput.focus();
+      }
+    }
+  }
+
+  function stopGeneratePrompt() {
+    if (!genPromptBusy) return;
+    genStopRequested = true;
+    // Abort any ongoing animation
+    if (currentAnimationAbort) {
+      currentAnimationAbort.abort();
+      currentAnimationAbort = null;
+    }
+    // Stop UI immediately; ignore late AI results
+    setGeneratePromptBusy(false);
+    stopProcessing('Stopped');
+    // Do not clear the prompt; user can edit and re-send
+    openGeneratePrompt();
+    genPromptInput.focus();
+  }
+
+  genActionBtn.addEventListener('click', () => {
+    if (genPromptBusy) {
+      stopGeneratePrompt();
+    } else {
+      submitGeneratePrompt();
+    }
+  });
+
+  genPromptInput.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      if (!genPromptBusy) submitGeneratePrompt();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (genPromptBusy || currentAnimationAbort) {
+        stopGeneratePrompt();
+      } else {
+        closeGeneratePrompt({ clear: false, focusEditor: true });
+      }
+    }
+  });
+
   // Compact status bar
   const statusBar = document.createElement('div');
   statusBar.style.display = 'flex';
@@ -1010,7 +1308,111 @@ export async function renderEditorBubble(noteId) {
   }
   body.appendChild(nameInput);
   body.appendChild(contentArea);
+  body.appendChild(genPromptWrapper);
   body.appendChild(statusBar);
+
+  // Selection-based Ask iChrome for ChromePad textarea
+  try {
+    contentArea.setAttribute('data-chromepad-editor', 'true');
+    const contentHost = document.getElementById(SELECTORS.CONTENT);
+    let cpCtxBtn = null;
+    let lastMouse = null;
+    let cpCtxProcessing = false;
+    let cpLastSelectionText = '';
+
+    function ensureCpCtxBtn() {
+      if (cpCtxBtn && cpCtxBtn.parentElement) return cpCtxBtn;
+      const btn = document.createElement('button');
+      btn.className = SELECTORS.CLASS_CONTEXT_ADD_BTN; // reuse existing style
+      btn.id = 'cp-ctx-add-btn';
+      btn.style.display = 'none';
+      btn.textContent = (window.CONFIG?.contextSelection?.buttonLabel) || 'Ask iChrome';
+      (contentHost || document.body).appendChild(btn);
+      cpCtxBtn = btn;
+      return btn;
+    }
+
+    function getSelectedTextareaText() {
+      try {
+        const start = Math.max(0, contentArea.selectionStart || 0);
+        const end = Math.max(0, contentArea.selectionEnd || 0);
+        if (end > start) {
+          return String(contentArea.value || '').slice(start, end);
+        }
+      } catch {}
+      return '';
+    }
+
+    function hideCpCtxBtn(resetProcessing = true) {
+      if (cpCtxBtn) cpCtxBtn.style.display = 'none';
+      if (resetProcessing) cpCtxProcessing = false;
+      cpLastSelectionText = '';
+    }
+
+    function showCpCtxBtn(e) {
+      if (cpCtxProcessing) return;
+      const selected = String(getSelectedTextareaText() || '').trim();
+      if (!selected) { hideCpCtxBtn(); return; }
+      cpLastSelectionText = selected;
+      const btn = ensureCpCtxBtn();
+      const host = contentHost || document.body;
+      const hostRect = host.getBoundingClientRect();
+      const taRect = contentArea.getBoundingClientRect();
+      const scrollTop = host.scrollTop || 0;
+      const scrollLeft = host.scrollLeft || 0;
+
+      // Prefer position near last mouseup, fallback to textarea top-right
+      let top = (taRect.top - hostRect.top) + scrollTop + 6;
+      let left = (taRect.right - hostRect.left) + scrollLeft - 80; // approx from right edge
+      if (lastMouse) {
+        top = (lastMouse.clientY - hostRect.top) + scrollTop - 24;
+        left = (lastMouse.clientX - hostRect.left) + scrollLeft + 8;
+      }
+
+      btn.style.top = `${Math.max(0, top)}px`;
+      btn.style.left = `${Math.max(0, left)}px`;
+      btn.style.display = 'inline-flex';
+
+      // Early guard: when the user presses the button, set processing before textarea loses focus
+      btn.onmousedown = () => { cpCtxProcessing = true; };
+
+      btn.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (cpCtxProcessing === false) cpCtxProcessing = true; // ensure flag
+        const text = String(cpLastSelectionText || '').trim();
+        if (!text) { hideCpCtxBtn(); return; }
+        const label = `📝 ${nameInput.value || 'Untitled'}`;
+        addExternalContext(text.slice(0, 2000), label);
+        // Collapse textarea selection BEFORE focusing to avoid re-triggering select listener
+        try {
+          const endPos = (contentArea.value || '').length;
+          if (typeof contentArea.setSelectionRange === 'function') {
+            contentArea.setSelectionRange(endPos, endPos);
+          }
+        } catch {}
+        // Also clear any window selection
+        try {
+          const sel = window.getSelection && window.getSelection();
+          if (sel && typeof sel.removeAllRanges === 'function') sel.removeAllRanges();
+        } catch {}
+        hideCpCtxBtn(false);
+        try { contentArea.focus(); } catch {}
+        setTimeout(() => { cpCtxProcessing = false; }, 120);
+      };
+    }
+
+    contentArea.addEventListener('mouseup', (e) => { lastMouse = { clientX: e.clientX, clientY: e.clientY }; showCpCtxBtn(e); });
+    contentArea.addEventListener('keyup', (e) => { if (e.key && e.key.startsWith('Arrow')) { /* caret move */ } showCpCtxBtn(e); });
+    contentArea.addEventListener('select', showCpCtxBtn);
+    contentArea.addEventListener('blur', hideCpCtxBtn);
+    (contentHost || document).addEventListener('scroll', hideCpCtxBtn, { passive: true });
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t === cpCtxBtn || t === contentArea) return; // allow internal interactions
+      hideCpCtxBtn();
+    });
+  } catch {}
 
   // -------------------------------------------------------------
   // Intercept native translate menu clicks for ChromePad editor
@@ -1155,6 +1557,12 @@ export async function renderEditorBubble(noteId) {
   });
   
   contentArea.addEventListener('input', () => {
+    // Interrupt animation if user types (if configured)
+    const cfg = (window.CONFIG && window.CONFIG.chromePad && window.CONFIG.chromePad.typewriterEffect) || {};
+    if (cfg.allowInterrupt && currentAnimationAbort) {
+      currentAnimationAbort.abort();
+      currentAnimationAbort = null;
+    }
     updateStats();
     debouncedSave();
   });
