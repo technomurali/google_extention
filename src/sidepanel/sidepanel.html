@@ -144,11 +144,28 @@ JAVASCRIPT:
       align-items: center;
       justify-content: center;
     }
-    /* Translate button mirrors minimize button styling */
-    .msg .msg-translate-btn {
+    /* Export button positioned next to minimize button */
+    .msg .msg-export-btn {
       position: absolute;
       top: 6px;
       right: 42px; /* placed left of minimize button */
+      width: 30px;
+      height: 30px;
+      appearance: none;
+      border: 1px solid var(--sp-button-border, rgba(255,255,255,0.25));
+      background: var(--sp-button-bg, rgba(255,255,255,0.15));
+      color: var(--sp-button-color, #fff);
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* Translate button positioned left of export button */
+    .msg .msg-translate-btn {
+      position: absolute;
+      top: 6px;
+      right: 78px; /* placed left of export button */
       width: 30px;
       height: 30px;
       appearance: none;
@@ -167,7 +184,7 @@ JAVASCRIPT:
     .msg .msg-speech-btn {
       position: absolute;
       top: 6px;
-      right: 78px; /* placed left of translate button */
+      right: 114px; /* placed left of translate button */
       width: 30px;
       height: 30px;
       appearance: none;
@@ -185,7 +202,7 @@ JAVASCRIPT:
     .msg .msg-speech-stop-btn {
       position: absolute;
       top: 6px;
-      right: 114px; /* placed left of speech button */
+      right: 150px; /* placed left of speech button */
       width: 30px;
       height: 30px;
       appearance: none;
@@ -197,12 +214,12 @@ JAVASCRIPT:
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
     }
     .msg .msg-minimize-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
     .msg .msg-translate-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
     .msg .msg-speech-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
     .msg .msg-speech-stop-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
+    .msg .msg-export-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
     /* Ensure AI bubble content starts below buttons; allow full width below */
     .msg.ai { padding-top: 36px; padding-right: 12px; }
     .msg.ai.minimized .msg-body {

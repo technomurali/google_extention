@@ -953,11 +953,19 @@ export function appendMessage(text, role) {
       }
       
       body.innerHTML = renderMarkdown(processedText);
+      
+      // Append body first, then safely store the original markdown on the bubble
+      bubble.appendChild(body);
+      try {
+        bubble.dataset.rawMarkdown = String(processedText || '');
+      } catch {}
     } catch {
       body.textContent = text; // safe fallback
+      bubble.appendChild(body);
     }
+  } else {
+    bubble.appendChild(body);
   }
-  bubble.appendChild(body);
 
   // Add per-bubble controls for AI messages (translate + minimize)
   if (role === 'ai') {
@@ -1216,6 +1224,30 @@ export function appendMessage(text, role) {
         bubble.appendChild(stopBtn);
         bubble.appendChild(playBtn);
       }
+    } catch {}
+
+    // Export button (Download)
+    try {
+      const exportBtn = document.createElement('button');
+      exportBtn.className = 'msg-export-btn';
+      exportBtn.title = 'Export';
+      exportBtn.setAttribute('aria-label', 'Export');
+      // Use ChromePad-style outlined download icon for visual consistency
+      exportBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+      exportBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        try {
+          const nameCandidate = (String(body.textContent || '').trim().split('\n')[0] || 'AI_Response').slice(0, 60);
+          const raw = String(bubble.dataset.rawMarkdown || body.textContent || '');
+          if (window.ChromePad && typeof window.ChromePad.exportContent === 'function') {
+            window.ChromePad.exportContent(nameCandidate, raw);
+          } else {
+            alert('Export feature is currently unavailable. Please reload and try again.');
+            console.error('ChromePad exportContent() not found on window');
+          }
+        } catch {}
+      }, { signal: abortController.signal });
+      bubble.appendChild(exportBtn);
     } catch {}
 
     const btn = document.createElement('button');

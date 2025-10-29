@@ -25,6 +25,63 @@ const log = logger.create('ChromePad');
 // Track if ChromePad list is already shown to prevent duplicates
 let chromePadListVisible = false;
 
+// Single-bubble lifecycle management
+let currentChromePadBubble = null;
+let isChromePadTransitioning = false;
+
+function cleanupCurrentBubble() {
+  // Also cleanup any active tooltips before removing bubble
+  try { cleanupAllTooltips && cleanupAllTooltips(); } catch {}
+  try {
+    if (currentChromePadBubble && currentChromePadBubble.parentElement) {
+      currentChromePadBubble.parentElement.removeChild(currentChromePadBubble);
+    }
+  } catch (err) {
+    try { log.warn('ChromePad bubble cleanup error:', err); } catch {}
+  } finally {
+    currentChromePadBubble = null;
+  }
+}
+
+try {
+  window.addEventListener('beforeunload', () => {
+    cleanupCurrentBubble();
+    chromePadListVisible = false;
+  });
+} catch {}
+
+// -------------------------------------------------------------
+// Tooltip management (prevent orphaned preview tooltips)
+// -------------------------------------------------------------
+let activeTooltips = new Set();
+
+function removeTooltip(tooltip) {
+  if (!tooltip) return;
+  try {
+    if (tooltip.parentElement) {
+      // fade out, then remove
+      try { tooltip.style.opacity = '0'; } catch {}
+      setTimeout(() => {
+        try { if (tooltip.parentElement) tooltip.parentElement.removeChild(tooltip); } catch {}
+        try { activeTooltips.delete(tooltip); } catch {}
+      }, 200);
+    } else {
+      try { activeTooltips.delete(tooltip); } catch {}
+    }
+  } catch (err) {
+    try { activeTooltips.delete(tooltip); } catch {}
+  }
+}
+
+function cleanupAllTooltips() {
+  try {
+    activeTooltips.forEach((tooltip) => {
+      try { if (tooltip && tooltip.parentElement) tooltip.parentElement.removeChild(tooltip); } catch {}
+    });
+  } catch {}
+  try { activeTooltips.clear(); } catch {}
+}
+
 // -------------------------------------------------------------
 // Processing animation (Option 2: Pulsing Glow)
 // -------------------------------------------------------------
@@ -63,6 +120,144 @@ function stopPulsing(bubbleEl) {
   } catch {}
 }
 
+// -------------------------------------------------------------
+// Export helpers (strip markdown + download)
+// -------------------------------------------------------------
+/**
+ * Strips all markdown formatting from text, returning plain text
+ * Handles: headers, bold/italic, links/images, code, lists, blockquotes,
+ * tables, strikethrough, task lists, horizontal rules, HTML tags, escapes.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripMarkdown(text) {
+  let result = String(text || '').trim();
+  if (!result) return '';
+
+  // Fenced code blocks (``` or ~~~) - keep inner content
+  result = result.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, '').replace(/```/g, ''));
+  result = result.replace(/~~~[\s\S]*?~~~/g, (m) => m.replace(/~~~\w*\n?/g, '').replace(/~~~/g, ''));
+
+  // Inline code
+  result = result.replace(/`([^`]+)`/g, '$1');
+
+  // Images ![alt](url)
+  result = result.replace(/!\[([^\]]*)\]\([^\)]+\)/g, '$1');
+
+  // Links [text](url)
+  result = result.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+
+  // Reference-style links [text][ref] and their definitions
+  result = result.replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1');
+  result = result.replace(/^\s*\[[^\]]+\]:\s+.+$/gm, '');
+
+  // Headers
+  result = result.replace(/^#{1,6}\s+(.+)$/gm, '$1');
+
+  // Bold, italic, strikethrough
+  result = result.replace(/\*\*([^\*]+)\*\*/g, '$1');
+  result = result.replace(/__([^_]+)__/g, '$1');
+  result = result.replace(/\*([^\*]+)\*/g, '$1');
+  result = result.replace(/_([^_]+)_/g, '$1');
+  result = result.replace(/~~([^~]+)~~/g, '$1');
+
+  // Blockquotes
+  result = result.replace(/^>\s+(.+)$/gm, '$1');
+
+  // Lists (unordered, ordered, task)
+  result = result.replace(/^\s*[-*+]\s+(.+)$/gm, '$1');
+  result = result.replace(/^\s*\d+\.\s+(.+)$/gm, '$1');
+  result = result.replace(/^\s*-\s+\[[x\s]\]\s+(.+)$/gim, '$1');
+
+  // Horizontal rules
+  result = result.replace(/^[\s]*[-*_]{3,}[\s]*$/gm, '');
+
+  // Tables (basic cleanup)
+  result = result.replace(/^\s*\|(.+)\|\s*$/gm, '$1');
+  result = result.replace(/\|/g, ' ');
+  result = result.replace(/^[\s]*[-:]+[\s]*$/gm, '');
+
+  // HTML tags
+  result = result.replace(/<[^>]+>/g, '');
+
+  // Escapes and whitespace
+  result = result.replace(/\\([\\`*_{}\[\]()#+\-.!|])/g, '$1');
+  result = result.replace(/\n{3,}/g, '\n\n');
+  result = result.replace(/[ \t]+/g, ' ');
+  result = result.replace(/^[ \t]+/gm, '');
+  result = result.replace(/[ \t]+$/gm, '');
+
+  return result.trim();
+}
+
+/**
+ * Triggers browser download of text content as a file
+ * @param {string} content
+ * @param {string} filename
+ * @param {string} mimeType
+ */
+function downloadFile(content, filename, mimeType = 'text/plain') {
+  try {
+    const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    if (link.parentElement) link.parentElement.removeChild(link);
+    URL.revokeObjectURL(url);
+    try { log.info('Downloaded file:', filename); } catch {}
+  } catch (err) {
+    try { log.error('Download failed:', err); } catch {}
+    alert(`Failed to download file: ${err && err.message ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Exports a note as .md (markdown) or .txt (plain text)
+ * OK = Plain Text (.txt), Cancel = Markdown (.md)
+ * @param {{name: string, content: string}} note
+ */
+async function exportNote(note) {
+  if (!note) return;
+
+  const userChoseTxt = confirm(
+    `Export "${note.name || 'Untitled'}":\n\n` +
+    `OK = Plain Text (.txt) - removes markdown formatting\n` +
+    `Cancel = Markdown (.md) - keeps markdown syntax`
+  );
+
+  const isPlainText = !!userChoseTxt;
+  const extension = isPlainText ? 'txt' : 'md';
+
+  // Safe filename
+  const safeName = String(note.name || 'note')
+    .replace(/[<>:\"/\\|?*]/g, '_')
+    .replace(/\s+/g, '_')
+    .trim() || 'note';
+  const filename = `${safeName}.${extension}`;
+
+  let content = String(note.content || '');
+  if (isPlainText) content = stripMarkdown(content);
+
+  const mimeType = isPlainText ? 'text/plain' : 'text/markdown';
+  downloadFile(content, filename, mimeType);
+}
+
+// Public wrapper to reuse export pipeline from outside ChromePad
+export function exportContent(name, rawMarkdown) {
+  const note = { name: String(name || 'Untitled'), content: String(rawMarkdown || '') };
+  return exportNote(note);
+}
+
+// Expose on window to avoid circular imports from ui.js
+try {
+  window.ChromePad = window.ChromePad || {};
+  window.ChromePad.exportContent = exportContent;
+} catch {}
+
 // -----------------------------
 // Storage helpers
 // -----------------------------
@@ -93,6 +288,184 @@ function createId() {
 
 function sortNotesArray(arr) {
   return arr.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+
+// -----------------------------
+// File Import Helpers
+// -----------------------------
+
+/**
+ * Validates imported file against size and type restrictions
+ * @param {File} file - File object to validate
+ * @returns {{valid: boolean, error?: string}}
+ */
+function validateImportFile(file) {
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  const ALLOWED_EXTENSIONS = ['.txt', '.md'];
+
+  // Check file size
+  if (file.size > MAX_FILE_SIZE) {
+    return {
+      valid: false,
+      error: `File "${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 5MB.`
+    };
+  }
+
+  // Check file extension
+  const fileName = String(file.name || '').toLowerCase();
+  const hasValidExtension = ALLOWED_EXTENSIONS.some(ext => fileName.endsWith(ext));
+  
+  if (!hasValidExtension) {
+    return {
+      valid: false,
+      error: `File "${file.name}" is not a supported format. Only .txt and .md files are allowed.`
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Generates a unique note name by checking existing notes and appending timestamp if needed
+ * @param {string} baseName - Base name from filename
+ * @param {Object} notesMap - Current notes map
+ * @returns {string} Unique note name
+ */
+function getUniqueNoteName(baseName, notesMap) {
+  const existingNames = Object.values(notesMap).map(n => String(n.name || '').toLowerCase());
+  let candidateName = baseName;
+  let counter = 2;
+
+  // Check if name exists (case-insensitive)
+  while (existingNames.includes(candidateName.toLowerCase())) {
+    candidateName = `${baseName} (${counter})`;
+    counter++;
+  }
+
+  return candidateName;
+}
+
+/**
+ * Reads file content as text with UTF-8 encoding
+ * @param {File} file - File to read
+ * @returns {Promise<string>} File content
+ */
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (event) => {
+      try {
+        const content = String(event.target.result || '');
+        resolve(content);
+      } catch (err) {
+        reject(new Error(`Failed to read file content: ${err.message}`));
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error(`Failed to read file "${file.name}"`));
+    };
+
+    // Read as UTF-8 text (industry standard)
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
+/**
+ * Handles importing multiple files and creating notes
+ * @param {File[]} files - Array of files to import
+ * @param {HTMLElement} listElement - List DOM element for status updates
+ * @param {Function} refreshListCallback - Callback to refresh the list view
+ */
+async function handleFileImport(files, listElement, refreshListCallback) {
+  const results = {
+    success: 0,
+    failed: 0,
+    errors: []
+  };
+
+  // Show importing indicator
+  const statusMsg = document.createElement('div');
+  statusMsg.style.textAlign = 'center';
+  statusMsg.style.padding = '12px';
+  statusMsg.style.fontSize = '12px';
+  statusMsg.style.opacity = '0.7';
+  statusMsg.textContent = `Importing ${files.length} file${files.length > 1 ? 's' : ''}...`;
+  listElement.appendChild(statusMsg);
+
+  // Get current notes map once
+  const notesMap = await readNotesMap();
+
+  for (const file of files) {
+    try {
+      // Validate file
+      const validation = validateImportFile(file);
+      if (!validation.valid) {
+        results.failed++;
+        results.errors.push(validation.error);
+        log.warn('File validation failed:', validation.error);
+        continue;
+      }
+
+      // Read file content
+      const content = await readFileAsText(file);
+
+      // Extract name from filename (remove extension)
+      const baseName = String(file.name || 'Imported')
+        .replace(/\.(txt|md)$/i, '')
+        .trim() || 'Imported';
+
+      // Get unique name
+      const uniqueName = getUniqueNoteName(baseName, notesMap);
+
+      // Create note
+      const id = createId();
+      const now = Date.now();
+      const note = {
+        id,
+        name: uniqueName,
+        content: content,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      // Add to map
+      notesMap[id] = note;
+      
+      results.success++;
+      log.info('Imported file:', file.name, '→', uniqueName);
+
+    } catch (err) {
+      results.failed++;
+      const errorMsg = `Failed to import "${file.name}": ${err.message}`;
+      results.errors.push(errorMsg);
+      log.error('File import error:', err);
+    }
+  }
+
+  // Save all imported notes at once
+  if (results.success > 0) {
+    await writeNotesMap(notesMap);
+  }
+
+  // Remove status message
+  if (statusMsg.parentElement) {
+    statusMsg.remove();
+  }
+
+  // Refresh list to show imported notes
+  await refreshListCallback();
+
+  // Show results if there were errors
+  if (results.failed > 0) {
+    const errorSummary = results.errors.slice(0, 3).join('\n');
+    const extraErrors = results.errors.length > 3 ? `\n...and ${results.errors.length - 3} more errors.` : '';
+    alert(`Import completed:\n✓ ${results.success} succeeded\n✗ ${results.failed} failed\n\n${errorSummary}${extraErrors}`);
+  }
+
+  // Scroll to top to show newly imported notes
+  scrollToBottom();
 }
 
 // -----------------------------
@@ -192,6 +565,9 @@ export async function renderNotesListBubble() {
   }
   chromePadListVisible = true;
 
+  // Ensure only one ChromePad bubble exists at any time
+  cleanupCurrentBubble();
+
   const body = appendMessage('', 'ai');
   body.innerHTML = '';
   body.style.padding = '8px';
@@ -199,15 +575,19 @@ export async function renderNotesListBubble() {
   // Hide speech and translate buttons, add + New button in their place
   const bubble = body.parentElement;
   if (bubble) {
+    // Track current bubble for lifecycle management
+    currentChromePadBubble = bubble;
     // Reduce top padding to reclaim space since we hide native header controls
     bubble.style.paddingTop = '8px';
     // Hide unwanted buttons
     const speechBtn = bubble.querySelector('.msg-speech-btn');
     const speechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
     const translateBtn = bubble.querySelector('.msg-translate-btn');
+    const exportBtn = bubble.querySelector('.msg-export-btn');
     if (speechBtn) speechBtn.style.display = 'none';
     if (speechStopBtn) speechStopBtn.style.display = 'none';
     if (translateBtn) translateBtn.style.display = 'none';
+    if (exportBtn) exportBtn.style.display = 'none';
 
     // Add + New button in top-right (where translate button was)
     const newBtn = document.createElement('button');
@@ -217,7 +597,7 @@ export async function renderNotesListBubble() {
     </svg>`;
     newBtn.style.position = 'absolute';
     newBtn.style.top = '6px';
-    newBtn.style.right = '42px'; // Where translate button was
+    newBtn.style.right = '78px'; // Shifted left to make room for import button
     newBtn.style.width = '30px';
     newBtn.style.height = '30px';
     newBtn.style.padding = '0';
@@ -232,6 +612,7 @@ export async function renderNotesListBubble() {
     newBtn.title = 'Create new note';
 
     newBtn.addEventListener('click', async () => {
+      try { cleanupAllTooltips(); } catch {}
       const note = await createNote('Untitled');
       await renderEditorBubble(note.id);
     });
@@ -246,7 +627,64 @@ export async function renderNotesListBubble() {
       newBtn.style.borderColor = 'rgba(255,255,255,0.25)';
     });
 
+    // Add Import button next to + New
+    const importBtn = document.createElement('button');
+    importBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="17 8 12 3 7 8"></polyline>
+      <line x1="12" y1="3" x2="12" y2="15"></line>
+    </svg>`;
+    importBtn.style.position = 'absolute';
+    importBtn.style.top = '6px';
+    importBtn.style.right = '42px'; // Where translate button was originally
+    importBtn.style.width = '30px';
+    importBtn.style.height = '30px';
+    importBtn.style.padding = '0';
+    importBtn.style.display = 'inline-flex';
+    importBtn.style.alignItems = 'center';
+    importBtn.style.justifyContent = 'center';
+    importBtn.style.background = 'rgba(255,255,255,0.15)';
+    importBtn.style.border = '1px solid rgba(255,255,255,0.25)';
+    importBtn.style.borderRadius = '6px';
+    importBtn.style.cursor = 'pointer';
+    importBtn.style.transition = 'all 0.15s ease';
+    importBtn.title = 'Import text or markdown files';
+
+    // Hidden file input for import
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.txt,.md';
+    fileInput.multiple = true;
+    fileInput.style.display = 'none';
+
+    importBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    // Hover effect
+    importBtn.addEventListener('mouseenter', () => {
+      importBtn.style.background = 'rgba(255,255,255,0.25)';
+      importBtn.style.borderColor = 'rgba(255,255,255,0.35)';
+    });
+    importBtn.addEventListener('mouseleave', () => {
+      importBtn.style.background = 'rgba(255,255,255,0.15)';
+      importBtn.style.borderColor = 'rgba(255,255,255,0.25)';
+    });
+
+    // Handle file import
+    fileInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
+
+      await handleFileImport(files, list, refreshList);
+
+      // Reset file input for next import
+      fileInput.value = '';
+    });
+
     bubble.appendChild(newBtn);
+    bubble.appendChild(importBtn);
+    bubble.appendChild(fileInput);
   }
 
   // Simple header with just title
@@ -268,6 +706,8 @@ export async function renderNotesListBubble() {
   list.style.gap = '6px';
 
   async function refreshList() {
+    // Ensure any stray tooltips are removed before re-rendering
+    try { cleanupAllTooltips(); } catch {}
     list.innerHTML = '';
     const notes = await getAllNotes();
     
@@ -299,6 +739,7 @@ export async function renderNotesListBubble() {
         if (previewText) {
           tooltip = document.createElement('div');
           tooltip.textContent = previewText;
+          try { activeTooltips.add(tooltip); } catch {}
           tooltip.style.position = 'fixed'; // Fixed to follow cursor
           tooltip.style.padding = '8px';
           tooltip.style.borderRadius = '8px';
@@ -311,10 +752,47 @@ export async function renderNotesListBubble() {
           tooltip.style.wordBreak = 'break-word';
           tooltip.style.zIndex = '1000';
           tooltip.style.opacity = '0';
-          tooltip.style.pointerEvents = 'none';
+          tooltip.style.pointerEvents = 'auto';
           tooltip.style.transition = 'opacity 0.2s ease';
           tooltip.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)';
           tooltip.style.maxWidth = '300px'; // Limit width for readability
+          tooltip.style.paddingRight = '24px';
+
+          // Add manual close button (×)
+          const closeBtn = document.createElement('button');
+          closeBtn.textContent = '×';
+          closeBtn.setAttribute('aria-label', 'Close preview');
+          closeBtn.style.position = 'absolute';
+          closeBtn.style.top = '4px';
+          closeBtn.style.right = '6px';
+          closeBtn.style.width = '18px';
+          closeBtn.style.height = '18px';
+          closeBtn.style.lineHeight = '16px';
+          closeBtn.style.border = 'none';
+          closeBtn.style.borderRadius = '3px';
+          closeBtn.style.background = 'rgba(255,255,255,0.12)';
+          closeBtn.style.color = '#fff';
+          closeBtn.style.cursor = 'pointer';
+          closeBtn.style.fontSize = '14px';
+          closeBtn.style.padding = '0';
+          closeBtn.style.display = 'inline-flex';
+          closeBtn.style.alignItems = 'center';
+          closeBtn.style.justifyContent = 'center';
+          closeBtn.title = 'Close preview';
+          closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            removeTooltip(tooltip);
+          });
+          tooltip.appendChild(closeBtn);
+
+          // Keep tooltip alive when hovered, close on leaving it
+          let tooltipHovered = false;
+          tooltip.addEventListener('mouseenter', () => { tooltipHovered = true; });
+          tooltip.addEventListener('mouseleave', () => {
+            tooltipHovered = false;
+            removeTooltip(tooltip);
+          });
         }
       }
 
@@ -345,9 +823,10 @@ export async function renderNotesListBubble() {
       // Tooltip only on filename hover
       if (tooltip) {
         noteTitle.addEventListener('mouseenter', () => {
+          try { cleanupAllTooltips(); } catch {}
           document.body.appendChild(tooltip);
           setTimeout(() => {
-            tooltip.style.opacity = '1';
+            try { tooltip.style.opacity = '1'; } catch {}
           }, 10);
         });
 
@@ -362,14 +841,8 @@ export async function renderNotesListBubble() {
         });
 
         noteTitle.addEventListener('mouseleave', () => {
-          if (tooltip && tooltip.parentElement) {
-            tooltip.style.opacity = '0';
-            setTimeout(() => {
-              if (tooltip && tooltip.parentElement) {
-                document.body.removeChild(tooltip);
-              }
-            }, 200);
-          }
+          try { if (typeof tooltipHovered !== 'undefined' && tooltipHovered) return; } catch {}
+          removeTooltip(tooltip);
         });
       }
 
@@ -416,6 +889,7 @@ export async function renderNotesListBubble() {
       previewBtn.addEventListener('mouseleave', () => previewBtn.style.opacity = '0.6');
       previewBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        try { cleanupAllTooltips(); } catch {}
         await renderEditorBubble(n.id, true); // true = open in preview mode
       });
 
@@ -450,6 +924,7 @@ export async function renderNotesListBubble() {
       editBtn.addEventListener('mouseleave', () => editBtn.style.opacity = '0.6');
       editBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        try { cleanupAllTooltips(); } catch {}
         await renderEditorBubble(n.id);
       });
 
@@ -533,6 +1008,7 @@ export async function renderNotesListBubble() {
       // Click to open
       row.addEventListener('click', async (e) => {
         if (e.target === editBtn || e.target === delBtn) return;
+        try { cleanupAllTooltips(); } catch {}
         await renderEditorBubble(n.id);
       });
 
@@ -554,6 +1030,8 @@ function countWords(text) {
 }
 
 export async function renderEditorBubble(noteId, startInPreview = false) {
+  // Single-bubble: remove any existing ChromePad bubble before opening editor
+  cleanupCurrentBubble();
   // Hide list when opening editor
   chromePadListVisible = false;
 
@@ -570,17 +1048,21 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
   // Configure ChromePad editor bubble (hide native minimize; reuse native speech/translate UI)
   const bubble = body.parentElement;
   if (bubble) {
+    // Track current bubble for lifecycle management
+    currentChromePadBubble = bubble;
     // Reduce top padding to reclaim vertical space
     bubble.style.paddingTop = '8px';
     const minimizeBtn = bubble.querySelector('.msg-minimize-btn');
     if (minimizeBtn) minimizeBtn.style.display = 'none';
-    // Hide native speech/stop/translate to avoid overlap; we reuse their logic via custom buttons
+    // Hide native speech/stop/translate/export to avoid overlap; we reuse their logic via custom buttons
     const nativeSpeechBtn = bubble.querySelector('.msg-speech-btn');
     const nativeSpeechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
     const nativeTranslateBtn = bubble.querySelector('.msg-translate-btn');
+    const nativeExportBtn = bubble.querySelector('.msg-export-btn');
     if (nativeSpeechBtn) nativeSpeechBtn.style.display = 'none';
     if (nativeSpeechStopBtn) nativeSpeechStopBtn.style.display = 'none';
     if (nativeTranslateBtn) nativeTranslateBtn.style.display = 'none';
+    if (nativeExportBtn) nativeExportBtn.style.display = 'none';
   }
 
   // Compact header: Back | Title + icons
@@ -941,6 +1423,29 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
   editModeBtn.addEventListener('mouseenter', () => editModeBtn.style.opacity = '1');
   editModeBtn.addEventListener('mouseleave', () => editModeBtn.style.opacity = '0.6');
 
+  // Export button (placed before Preview)
+  const exportBtn = document.createElement('button');
+  exportBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+    <polyline points="7 10 12 15 17 10"></polyline>
+    <line x1="12" y1="15" x2="12" y2="3"></line>
+  </svg>`;
+  exportBtn.style.background = 'none';
+  exportBtn.style.border = 'none';
+  exportBtn.style.cursor = 'pointer';
+  exportBtn.style.opacity = '0.6';
+  exportBtn.style.padding = '2px 4px';
+  exportBtn.style.display = 'inline-flex';
+  exportBtn.style.alignItems = 'center';
+  exportBtn.style.justifyContent = 'center';
+  exportBtn.title = 'Export';
+  exportBtn.addEventListener('mouseenter', () => exportBtn.style.opacity = '1');
+  exportBtn.addEventListener('mouseleave', () => exportBtn.style.opacity = '0.6');
+  exportBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await exportNote({ name: nameInput.value || 'Untitled', content: contentArea.value || '' });
+  });
+
   // ORDER: Generate, Ask iChrome, Read Loud, Translate, Proofread, Rewrite, Preview, Edit, Save, Delete, Close, Min/Max
   actions.appendChild(genBtn);
   actions.appendChild(askBtn);
@@ -949,6 +1454,7 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
   actions.appendChild(translateHdrBtn);
   actions.appendChild(proofBtn);
   actions.appendChild(rewriteBtn);
+  actions.appendChild(exportBtn);
   actions.appendChild(previewModeBtn);
   actions.appendChild(editModeBtn);
   actions.appendChild(saveBtn);
@@ -1759,9 +2265,17 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
   });
 
   backBtn.addEventListener('click', async () => {
-    chromePadListVisible = false;
-    await renderNotesListBubble();
-    scrollToBottom();
+    if (isChromePadTransitioning) return;
+    isChromePadTransitioning = true;
+    try {
+      // Remove current editor bubble and return to list
+      cleanupCurrentBubble();
+      chromePadListVisible = false;
+      await renderNotesListBubble();
+      scrollToBottom();
+    } finally {
+      setTimeout(() => { isChromePadTransitioning = false; }, 200);
+    }
   });
 
   delBtn.addEventListener('click', async (e) => {
@@ -1769,9 +2283,17 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
     const ok = confirm(`Delete "${note.name}"?`);
     if (!ok) return;
     await deleteNote(noteId);
-    chromePadListVisible = false;
-    await renderNotesListBubble();
-    scrollToBottom();
+    if (isChromePadTransitioning) return;
+    isChromePadTransitioning = true;
+    try {
+      // Remove current editor bubble and show updated list
+      cleanupCurrentBubble();
+      chromePadListVisible = false;
+      await renderNotesListBubble();
+      scrollToBottom();
+    } finally {
+      setTimeout(() => { isChromePadTransitioning = false; }, 200);
+    }
   });
 
   // Auto-focus name input if new note
