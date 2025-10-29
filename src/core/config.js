@@ -317,6 +317,27 @@ const CONFIG = {
   },
 
   // ============================================
+  // MARKDOWN RENDERING (Internal, dependency-free)
+  // Controls basic markdown support across the app
+  // ============================================
+  markdown: {
+    enabled: true,
+    openLinksInNewTab: true,
+    sanitize: true,          // Always escape HTML before rendering markdown
+    features: {
+      headings: true,
+      emphasis: true,        // bold/italic/strike
+      inlineCode: true,
+      codeBlocks: true,
+      lists: true,
+      blockquotes: true,
+      hr: true,
+      links: true,
+      autolinks: true,
+    },
+  },
+
+  // ============================================
   // TOOL MENTIONS (@tool)
   // Configuration for inline @tool mentions in the input
   // ============================================
@@ -337,6 +358,17 @@ const CONFIG = {
       mentionBorderRadius: '4px',
       mentionPadding: '2px 4px',
     },
+    // Tool labels (customize display names, but IDs remain the same for behavior)
+    // Format: { id: 'internal_id', label: '@DisplayName', icon: 'emoji' }
+    // You can change labels and icons, but keep the 'id' values unchanged
+    tools: [
+      { id: 'chat', label: '@iChromeChat', icon: '💬', aliases: ['@chat', '@general'] },
+      { id: 'page', label: '@Page', icon: '📃', aliases: ['@webpage', '@content'] },
+      { id: 'history', label: '@BrowserHistory', icon: '📚', aliases: ['@browsing', '@recent'] },
+      { id: 'bookmarks', label: '@Bookmarks', icon: '🔖', aliases: ['@saved', '@favorites'] },
+      { id: 'downloads', label: '@Downloads', icon: '📥', aliases: ['@files'] },
+      { id: 'chromepad', label: '@ChromePad', icon: '📝', aliases: ['@notes', '@notepad'] },
+    ],
   },
 
   // ============================================

@@ -27,6 +27,7 @@ A Chrome extension that combines **Gemini Nano AI** (on-device) with powerful br
 - **🎨 Auto Theme** - Syncs with system dark/light mode
 - **📦 Modular** - Production-grade architecture
 - **♿ Accessible** - Full ARIA support
+- **🎯 @-Mentions** - Type `@` to select tools with autocomplete
 
 ---
 
@@ -1166,6 +1167,74 @@ Have questions or suggestions?
 - **Issues**: GitHub Issues
 - **Discussions**: GitHub Discussions
 - **Email**: [Your Email]
+
+---
+
+## 🎨 Customization
+
+### Tool Label Customization
+
+You can customize tool names, icons, and aliases in `src/core/config.js`:
+
+```javascript
+toolMentions: {
+  tools: [
+    { 
+      id: 'chat',           // Keep ID unchanged (for behavior)
+      label: '@GeneralChat', // Customize display name
+      icon: '💬',           // Customize icon
+      aliases: ['@chat', '@general'] // Add aliases
+    },
+    { 
+      id: 'page', 
+      label: '@WebPage',    // Example: Change to @WebPage
+      icon: '🌐',           // Example: Change icon
+      aliases: ['@content', '@site'] 
+    },
+    // ... customize other tools
+  ]
+}
+```
+
+**What You Can Customize:**
+- ✅ `label` - Display name (e.g., change `@GeneralChat` to `@AI`)
+- ✅ `icon` - Emoji icon (any emoji)
+- ✅ `aliases` - Alternative names (e.g., `@chat` → `@GeneralChat`)
+
+**What Must Stay the Same:**
+- ⚠️ `id` - Internal identifier (must match: `chat`, `page`, `history`, `bookmarks`, `downloads`, `chromepad`)
+
+**Examples:**
+
+```javascript
+// Spanish localization
+{ id: 'history', label: '@Historial', icon: '📚', aliases: ['@navegacion'] }
+
+// Simplified labels
+{ id: 'chat', label: '@AI', icon: '🤖', aliases: ['@bot'] }
+
+// Custom branding
+{ id: 'chromepad', label: '@Notes', icon: '📓', aliases: ['@memo'] }
+```
+
+### How @-Mentions Work
+
+1. **Type `@`** → Autocomplete menu appears
+2. **Filter by typing** → `@his` shows only matching tools
+3. **Select with keyboard** → ↑↓ to navigate, Enter to select
+4. **Select with mouse** → Click any tool
+5. **Use aliases** → Type `@chat` instead of `@GeneralChat`
+
+**Message Flow:**
+```
+User types: "@Page what is on this page?"
+           ↓
+System parses: tool = "page", query = "what is on this page?"
+           ↓
+Routes to: Page analysis feature
+           ↓
+Displays: Page content summary
+```
 
 ---
 

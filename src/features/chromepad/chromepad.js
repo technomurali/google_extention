@@ -18,6 +18,7 @@ import { debounce } from '../../core/utils.js';
 import { logger } from '../../core/logger.js';
 import { proofreadText, rewriteText, generateTextFromPrompt } from '../../services/ai_editing.js';
 import { translateText } from '../../services/translation.js';
+import { renderMarkdown } from '../../services/markdown.js';
 
 const log = logger.create('ChromePad');
 
@@ -908,6 +909,24 @@ export async function renderEditorBubble(noteId) {
   contentArea.style.fontFamily = 'inherit';
   contentArea.style.minHeight = '150px';
 
+  // Markdown preview container (hidden by default)
+  const mdPreview = document.createElement('div');
+  mdPreview.style.display = 'none';
+  mdPreview.style.padding = '8px';
+  mdPreview.style.border = '1px solid rgba(255,255,255,0.15)';
+  mdPreview.style.borderRadius = '6px';
+  mdPreview.style.background = 'rgba(255,255,255,0.04)';
+  mdPreview.style.color = 'inherit';
+  mdPreview.style.marginTop = '8px';
+  mdPreview.style.fontSize = '13px';
+  mdPreview.style.lineHeight = '1.5';
+
+  // Helper to render markdown preview
+  function updateMarkdownPreview() {
+    try { mdPreview.innerHTML = renderMarkdown(contentArea.value || ''); }
+    catch { mdPreview.textContent = contentArea.value || ''; }
+  }
+
   // Focus effects
   nameInput.addEventListener('focus', () => {
     nameInput.style.borderBottomColor = 'rgba(255,255,255,0.3)';
@@ -921,6 +940,10 @@ export async function renderEditorBubble(noteId) {
   });
   contentArea.addEventListener('blur', () => {
     contentArea.style.borderColor = 'rgba(255,255,255,0.15)';
+  });
+
+  contentArea.addEventListener('input', () => {
+    if (mdPreview.style.display !== 'none') updateMarkdownPreview();
   });
 
   // Inline generate prompt panel (hidden by default)
@@ -1248,6 +1271,33 @@ export async function renderEditorBubble(noteId) {
   stats.style.display = 'flex';
   stats.style.gap = '8px';
 
+  // Preview toggle
+  const previewToggle = document.createElement('button');
+  previewToggle.type = 'button';
+  previewToggle.textContent = 'Preview';
+  previewToggle.style.background = 'transparent';
+  previewToggle.style.color = 'inherit';
+  previewToggle.style.border = '1px solid rgba(255,255,255,0.2)';
+  previewToggle.style.borderRadius = '6px';
+  previewToggle.style.padding = '2px 8px';
+  previewToggle.style.cursor = 'pointer';
+  previewToggle.style.fontSize = '11px';
+  previewToggle.style.opacity = '0.8';
+  let previewOn = false;
+  previewToggle.addEventListener('click', () => {
+    previewOn = !previewOn;
+    previewToggle.textContent = previewOn ? 'Edit' : 'Preview';
+    if (previewOn) {
+      updateMarkdownPreview();
+      contentArea.style.display = 'none';
+      mdPreview.style.display = 'block';
+    } else {
+      mdPreview.style.display = 'none';
+      contentArea.style.display = 'block';
+      contentArea.focus();
+    }
+  });
+
   const wordCount = document.createElement('span');
   const charCount = document.createElement('span');
 
@@ -1267,6 +1317,7 @@ export async function renderEditorBubble(noteId) {
   saveIndicator.style.transition = 'opacity 0.2s ease';
 
   statusBar.appendChild(stats);
+  statusBar.appendChild(previewToggle);
   statusBar.appendChild(saveIndicator);
 
   updateStats();
@@ -1308,6 +1359,7 @@ export async function renderEditorBubble(noteId) {
   }
   body.appendChild(nameInput);
   body.appendChild(contentArea);
+  body.appendChild(mdPreview);
   body.appendChild(genPromptWrapper);
   body.appendChild(statusBar);
 

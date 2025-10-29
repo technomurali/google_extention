@@ -64,6 +64,7 @@ import { AIError, PermissionError } from '../core/errors.js';
 import { logger } from '../core/logger.js';
 import { formatErrorForUser } from '../core/errors.js';
 import { handleChromePadRequest, handleChromePadSelected } from '../features/chromepad/chromepad.js';
+import { renderMarkdown } from '../services/markdown.js';
 
 const log = logger.create('SidePanel');
 
@@ -202,10 +203,20 @@ async function handleChatRequest(queryText) {
   try {
     const stream = await sendStreamingPrompt(queryText);
     const aiMessageElement = appendMessage('', 'ai');
+    let buffer = '';
+    let lastRender = 0;
     for await (const chunk of stream) {
-      aiMessageElement.textContent += chunk;
-      scrollToBottom();
+      buffer += chunk;
+      const now = Date.now();
+      if (now - lastRender > 120) {
+        aiMessageElement.innerHTML = renderMarkdown(unwrapMarkdownFenceProgressive(buffer));
+        lastRender = now;
+        scrollToBottom();
+      }
     }
+    // Final render as markdown
+    const unwrapped = unwrapFullCodeFence(buffer);
+    aiMessageElement.innerHTML = renderMarkdown(unwrapped);
   } catch (err) {
     try {
       const response = await sendPrompt(queryText);
@@ -352,23 +363,33 @@ async function sendMessage() {
   try {
     const options = currentAbortController ? { signal: currentAbortController.signal } : {};
     const stream = await sendStreamingPrompt(finalPrompt, options);
-
+    let buffer = '';
+    let lastRender = 0;
     for await (const chunk of stream) {
       if (manualStopFlag) break;
-      aiMessageElement.textContent += chunk;
-      scrollToBottom();
+      buffer += chunk;
+      const now = Date.now();
+      if (now - lastRender > 120) {
+        aiMessageElement.innerHTML = renderMarkdown(unwrapMarkdownFenceProgressive(buffer));
+        lastRender = now;
+        scrollToBottom();
+      }
     }
+    // Final render as markdown
+    const unwrapped = unwrapFullCodeFence(buffer);
+    aiMessageElement.innerHTML = renderMarkdown(unwrapped);
   } catch (streamError) {
     const aborted = (currentAbortController && currentAbortController.signal && currentAbortController.signal.aborted) || manualStopFlag;
     if (!aborted) {
       log.warn('Streaming failed, trying non-streaming:', streamError);
       try {
         const response = await sendPrompt(finalPrompt);
-        aiMessageElement.textContent = response;
+        const unwrapped2 = unwrapFullCodeFence(response);
+        aiMessageElement.innerHTML = renderMarkdown(unwrapped2);
       } catch (promptError) {
         log.error('Chat request failed:', promptError);
         const errorMsg = formatErrorForUser(promptError, ERROR_MESSAGES.AI_UNAVAILABLE);
-        aiMessageElement.textContent = errorMsg;
+        aiMessageElement.innerHTML = renderMarkdown(errorMsg);
       }
     }
   } finally {
@@ -379,6 +400,29 @@ async function sendMessage() {
     manualStopFlag = false;
     clearSelectedContextsAfterSend();
   }
+}
+
+function unwrapFullCodeFence(text) {
+  try {
+    const m = String(text || '').match(/^```(?:markdown|md)?\s*\n([\s\S]*)\n```\s*$/);
+    if (m) return m[1];
+    return String(text || '');
+  } catch { return String(text || ''); }
+}
+
+function unwrapMarkdownFenceProgressive(text) {
+  try {
+    const s = String(text || '');
+    // If it starts with ```markdown or ```md, remove the opening fence early for live rendering
+    const startMatch = s.match(/^```(?:markdown|md)?\s*\n([\s\S]*)$/);
+    if (startMatch) {
+      const inner = startMatch[1];
+      // If it already has a closing ```, strip it too
+      const endFence = inner.match(/([\s\S]*?)\n```\s*$/);
+      return endFence ? endFence[1] : inner;
+    }
+    return s;
+  } catch { return String(text || ''); }
 }
 
 /**

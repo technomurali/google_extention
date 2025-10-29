@@ -36,6 +36,7 @@ import {
   debounce,
 } from '../core/utils.js';
 import { translateText } from '../services/translation.js';
+import { renderMarkdown } from '../services/markdown.js';
 
 // Page pill state (UI only)
 let pagePill = null;
@@ -810,11 +811,33 @@ export function setupToolsMenu() {
     return;
   }
 
+  // Build the tools dropdown dynamically from configuration so labels/icons stay in sync
+  function populateToolsMenu() {
+    const menu = elements.toolsMenu;
+    if (!menu) return;
+    // Clear existing static items (from HTML) and rebuild
+    menu.innerHTML = '';
+    const tools = getToolCatalog();
+    tools.forEach((tool) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = SELECTORS.CLASS_TOOL_ITEM;
+      btn.dataset.tool = tool.id;
+      // Include icon when available
+      const label = tool && tool.label ? tool.label : '';
+      const icon = tool && tool.icon ? `${tool.icon} ` : '';
+      btn.textContent = `${icon}${label}`.trim();
+      menu.appendChild(btn);
+    });
+  }
+
   const hideMenu = () => {
     elements.toolsMenu.style.display = 'none';
   };
 
   const showMenu = () => {
+    // Ensure items reflect current configuration before showing
+    populateToolsMenu();
     computeToolsMenuWidth();
     elements.toolsMenu.style.display = 'block';
     // Focus first item for keyboard navigation
@@ -914,7 +937,26 @@ export function appendMessage(text, role) {
 
   const body = document.createElement('div');
   body.className = 'msg-body';
-  if (typeof text === 'string') body.textContent = text;
+  if (typeof text === 'string') {
+    try {
+      let processedText = text;
+      
+      // For AI responses, check if entire response is wrapped in code block
+      if (role === 'ai') {
+        // Pattern: entire message is ```markdown\n...\n``` or ```\n...\n```
+        const codeBlockMatch = text.match(/^```(?:markdown|md)?\s*\n([\s\S]*)\n```\s*$/);
+        if (codeBlockMatch) {
+          // Unwrap the code block to render as markdown
+          processedText = codeBlockMatch[1];
+          console.log('[UI] Unwrapped AI code block for markdown rendering');
+        }
+      }
+      
+      body.innerHTML = renderMarkdown(processedText);
+    } catch {
+      body.textContent = text; // safe fallback
+    }
+  }
   bubble.appendChild(body);
 
   // Add per-bubble controls for AI messages (translate + minimize)
@@ -1436,13 +1478,25 @@ export function enhanceAccessibility() {
 // ---------------------------------------------
 
 function getToolCatalog() {
+  // Read from config, fallback to defaults if not defined
+  const cfg = window.CONFIG?.toolMentions?.tools;
+  if (cfg && Array.isArray(cfg) && cfg.length > 0) {
+    // Use configured tools
+    return cfg.map(tool => ({
+      id: tool.id,
+      label: tool.label,
+      icon: tool.icon || '',
+      aliases: tool.aliases || []
+    }));
+  }
+  // Fallback to hardcoded defaults
   return [
-    { id: TOOLS.CHAT, label: '@GeneralChat', icon: '💬' },
-    { id: TOOLS.PAGE, label: '@Page', icon: '📃' },
-    { id: TOOLS.HISTORY, label: '@History', icon: '📚' },
-    { id: TOOLS.BOOKMARKS, label: '@Bookmarks', icon: '🔖' },
-    { id: TOOLS.DOWNLOADS, label: '@Downloads', icon: '📥' },
-    { id: TOOLS.CHROMEPAD, label: '@ChromePad', icon: '📝' },
+    { id: TOOLS.CHAT, label: '@GeneralChat', icon: '💬', aliases: ['@chat', '@general'] },
+    { id: TOOLS.PAGE, label: '@Page', icon: '📃', aliases: ['@webpage', '@content'] },
+    { id: TOOLS.HISTORY, label: '@History', icon: '📚', aliases: ['@browsing', '@recent'] },
+    { id: TOOLS.BOOKMARKS, label: '@Bookmarks', icon: '🔖', aliases: ['@saved', '@favorites'] },
+    { id: TOOLS.DOWNLOADS, label: '@Downloads', icon: '📥', aliases: ['@files'] },
+    { id: TOOLS.CHROMEPAD, label: '@ChromePad', icon: '📝', aliases: ['@notes', '@notepad'] },
   ];
 }
 
@@ -1454,10 +1508,18 @@ function getToolMentionLabel(toolId) {
 function findToolByMention(mentionText) {
   const norm = String(mentionText || '').trim().toLowerCase();
   const list = getToolCatalog();
+  
+  // Try exact label match first
   const direct = list.find(t => t.label.toLowerCase() === norm);
   if (direct) return direct;
-  // Allow common aliases like @chat
-  if (norm === '@chat' || norm === '@general') return list.find(t => t.id === TOOLS.CHAT);
+  
+  // Try alias match (configured or default)
+  const aliasMatch = list.find(t => {
+    if (!t.aliases || !Array.isArray(t.aliases)) return false;
+    return t.aliases.some(alias => alias.toLowerCase() === norm);
+  });
+  if (aliasMatch) return aliasMatch;
+  
   return null;
 }
 

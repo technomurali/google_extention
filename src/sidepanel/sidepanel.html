@@ -466,6 +466,38 @@ JAVASCRIPT:
       font-size: 11px;
       opacity: 0.9;
     }
+
+    /* ---------------- Markdown content styling ---------------- */
+    .msg .msg-body h1, .msg .msg-body h2, .msg .msg-body h3,
+    .msg .msg-body h4, .msg .msg-body h5, .msg .msg-body h6 {
+      margin: 10px 0 6px;
+      line-height: 1.25;
+    }
+    .msg .msg-body p { margin: 6px 0; }
+    .msg .msg-body ul, .msg .msg-body ol { margin: 6px 0 6px 18px; }
+    .msg .msg-body blockquote {
+      margin: 6px 0;
+      padding: 6px 8px;
+      border-left: 3px solid rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.06);
+      border-radius: 6px;
+    }
+    .msg .msg-body pre {
+      margin: 8px 0;
+      padding: 8px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.35);
+      overflow: auto;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .msg .msg-body code {
+      background: rgba(0,0,0,0.35);
+      border-radius: 4px;
+      padding: 2px 4px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .msg .msg-body hr { border: 0; height: 1px; background: rgba(255,255,255,0.2); margin: 8px 0; }
+    .msg .msg-body a { color: #A9C7FF; text-decoration: underline; }
     /* Context pills row above input */
     .context-pills-row {
       position: relative;
