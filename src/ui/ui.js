@@ -843,7 +843,15 @@ export function setupToolsMenu() {
   elements.toolsMenu.addEventListener('click', (event) => {
     const target = event.target;
     if (target && target.dataset && target.dataset.tool) {
-      setSelectedTool(target.dataset.tool);
+      try {
+        // Insert @mention into input instead of immediately switching tool
+        const inputEl = elements.input;
+        const mention = getToolMentionLabel(target.dataset.tool);
+        if (inputEl && mention) {
+          insertOrReplaceLeadingMention(inputEl, mention + ' ');
+          inputEl.focus();
+        }
+      } catch {}
       hideMenu();
     }
   }, { signal: abortController.signal });
@@ -1422,6 +1430,220 @@ export function enhanceAccessibility() {
 
 // Content-level minimize/deprecated: Implemented per-bubble in appendMessage
 // (toggleContentMinimize, initializeContentState) — removed
+
+// ---------------------------------------------
+// Tool mentions (@tool) - autocomplete and helpers
+// ---------------------------------------------
+
+function getToolCatalog() {
+  return [
+    { id: TOOLS.CHAT, label: '@GeneralChat', icon: '💬' },
+    { id: TOOLS.PAGE, label: '@Page', icon: '📃' },
+    { id: TOOLS.HISTORY, label: '@History', icon: '📚' },
+    { id: TOOLS.BOOKMARKS, label: '@Bookmarks', icon: '🔖' },
+    { id: TOOLS.DOWNLOADS, label: '@Downloads', icon: '📥' },
+    { id: TOOLS.CHROMEPAD, label: '@ChromePad', icon: '📝' },
+  ];
+}
+
+function getToolMentionLabel(toolId) {
+  const item = getToolCatalog().find(t => t.id === toolId);
+  return item ? item.label : null;
+}
+
+function findToolByMention(mentionText) {
+  const norm = String(mentionText || '').trim().toLowerCase();
+  const list = getToolCatalog();
+  const direct = list.find(t => t.label.toLowerCase() === norm);
+  if (direct) return direct;
+  // Allow common aliases like @chat
+  if (norm === '@chat' || norm === '@general') return list.find(t => t.id === TOOLS.CHAT);
+  return null;
+}
+
+function insertOrReplaceLeadingMention(inputEl, mentionWithSpace) {
+  const value = inputEl.value || '';
+  const leading = value.match(/^@\w+\b\s*/);
+  if (leading) {
+    inputEl.value = mentionWithSpace + value.slice(leading[0].length);
+  } else {
+    inputEl.value = mentionWithSpace + value;
+  }
+  // Move caret to end
+  try { inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length; } catch {}
+}
+
+export function parseLeadingToolMention(text) {
+  const cfg = window.CONFIG?.toolMentions || {};
+  if (cfg.enabled === false) return { toolId: null, stripped: text };
+  const m = String(text || '').match(/^(@[A-Za-z][A-Za-z0-9]*)\b\s*/);
+  if (!m) return { toolId: null, stripped: text };
+  const tool = findToolByMention(m[1]);
+  if (!tool) return { toolId: null, stripped: text };
+  const stripped = String(text || '').slice(m[0].length);
+  return { toolId: tool.id, stripped };
+}
+
+export function setupToolMentions() {
+  const cfg = window.CONFIG?.toolMentions || {};
+  if (cfg.enabled === false) return;
+
+  const inputEl = elements.input;
+  const content = elements.content;
+  if (!inputEl || !content) return;
+
+  let menuEl = null;
+  let activeIndex = -1;
+  let filtered = [];
+
+  function ensureMenu() {
+    if (menuEl) return menuEl;
+    const el = document.createElement('div');
+    el.id = 'sp-mention-menu';
+    // Use absolute positioning within the input wrapper
+    el.style.position = 'absolute';
+    el.style.zIndex = '9999999'; // Very high z-index to ensure it's on top
+    el.style.display = 'none';
+    el.style.border = '1px solid rgba(255,255,255,0.2)';
+    el.style.background = 'rgba(30,30,30,0.98)'; // Darker, more opaque background
+    el.style.color = '#fff';
+    el.style.borderRadius = '8px';
+    el.style.padding = '4px';
+    el.style.fontSize = '13px';
+    el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)'; // Add shadow for visibility
+    // Find the input wrapper or bottom section to append to
+    const inputWrap = document.querySelector('.input-wrap') || document.querySelector('.bottom');
+    if (inputWrap) {
+      inputWrap.appendChild(el);
+    } else {
+      // Fallback to body if structure is different
+      document.body.appendChild(el);
+    }
+    // Prevent scroll bleed when scrolling over the menu
+    el.addEventListener('wheel', (e) => { e.preventDefault(); }, { passive: false });
+    menuEl = el;
+    return el;
+  }
+
+  function positionMenu() {
+    const el = ensureMenu();
+    // Position above the input field (like tools menu)
+    el.style.bottom = '54px'; // Above input, matching tools menu position
+    el.style.left = '12px';
+    el.style.right = 'auto';
+    el.style.top = 'auto';
+    el.style.minWidth = '200px';
+    el.style.maxWidth = 'calc(100% - 24px)';
+  }
+
+  function renderMenu() {
+    const el = ensureMenu();
+    el.innerHTML = '';
+    filtered.forEach((item, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = SELECTORS.CLASS_TOOL_ITEM;
+      btn.style.display = 'flex';
+      btn.style.width = '100%';
+      btn.style.textAlign = 'left';
+      btn.style.gap = '6px';
+      btn.style.padding = '6px 8px';
+      btn.style.background = idx === activeIndex ? 'rgba(255,255,255,0.12)' : 'transparent';
+      btn.style.border = '0';
+      btn.style.cursor = 'pointer';
+      btn.dataset.tool = item.id;
+      btn.textContent = `${item.icon} ${item.label}`;
+      // Lightweight hover highlight without re-render
+      btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(255,255,255,0.12)'; });
+      btn.addEventListener('mouseleave', () => { if (idx !== activeIndex) btn.style.background = 'transparent'; });
+      btn.addEventListener('click', () => {
+        insertOrReplaceLeadingMention(inputEl, item.label + ' ');
+        hideMenu();
+        inputEl.focus();
+      }, { once: true });
+      el.appendChild(btn);
+    });
+    positionMenu();
+    el.style.display = filtered.length ? 'block' : 'none';
+  }
+
+  function hideMenu() {
+    if (menuEl) menuEl.style.display = 'none';
+    activeIndex = -1;
+  }
+
+  function updateFiltered(query) {
+    const all = getToolCatalog();
+    const q = String(query || '').toLowerCase();
+    filtered = all.filter(t => t.label.toLowerCase().includes(q));
+    if (cfg.autocomplete && cfg.autocomplete.maxVisible) {
+      filtered = filtered.slice(0, cfg.autocomplete.maxVisible);
+    }
+    activeIndex = filtered.length ? 0 : -1;
+    renderMenu();
+  }
+
+  function getMentionQueryAtCaret() {
+    try {
+      const caret = inputEl.selectionStart || 0;
+      const left = (inputEl.value || '').slice(0, caret);
+      const m = left.match(/@([A-Za-z0-9]*)$/);
+      if (!m) return null;
+      return '@' + (m[1] || '');
+    } catch {
+      return null;
+    }
+  }
+
+  inputEl.addEventListener('keydown', (ev) => {
+    const cfgEnabled = (window.CONFIG?.toolMentions?.enabled !== false);
+    if (!cfgEnabled) return;
+    const isMenuOpen = menuEl && menuEl.style.display === 'block';
+    if (isMenuOpen) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); activeIndex = Math.min(filtered.length - 1, activeIndex + 1); renderMenu(); return; }
+      if (ev.key === 'ArrowUp') { ev.preventDefault(); activeIndex = Math.max(0, activeIndex - 1); renderMenu(); return; }
+      if (ev.key === 'Enter' || ev.key === 'Tab') {
+        if (activeIndex >= 0 && filtered[activeIndex]) {
+          ev.preventDefault();
+          insertOrReplaceLeadingMention(inputEl, filtered[activeIndex].label + ' ');
+          hideMenu();
+        }
+        return;
+      }
+      if (ev.key === 'Escape') { ev.preventDefault(); hideMenu(); return; }
+    }
+    if (ev.key === '@') {
+      // Open menu fresh
+      setTimeout(() => { updateFiltered(''); }, 0);
+    }
+  }, { signal: abortController.signal });
+
+  inputEl.addEventListener('input', () => {
+    const q = getMentionQueryAtCaret();
+    if (q) {
+      updateFiltered(q);
+    } else {
+      hideMenu();
+    }
+  }, { signal: abortController.signal });
+
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    const holder = menuEl;
+    if (!holder) return;
+    if (holder.style.display === 'block' && !holder.contains(target) && target !== inputEl) {
+      hideMenu();
+    }
+  }, { signal: abortController.signal });
+
+  // Reposition on container scroll and window resize to keep alignment
+  content.addEventListener('scroll', () => {
+    if (menuEl && menuEl.style.display === 'block') positionMenu();
+  }, { signal: abortController.signal, passive: true });
+  window.addEventListener('resize', () => {
+    if (menuEl && menuEl.style.display === 'block') positionMenu();
+  }, { signal: abortController.signal });
+}
 
 /**
  * Cleans up all event listeners and resources

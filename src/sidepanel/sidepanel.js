@@ -37,12 +37,15 @@ import {
   initializeTextareaHeight,
   setupTextareaResizing,
   setupToolsMenu,
+  setupToolMentions,
   autoGrowTextarea,
   appendMessage,
   renderResults,
   updateStatus,
   getAndClearInput,
+  parseLeadingToolMention,
   getSelectedTool,
+  setSelectedTool,
   enhanceAccessibility,
   cleanup as cleanupUI,
   getInputElement,
@@ -258,7 +261,7 @@ async function routeMessage(queryText) {
  * Coordinates input retrieval, routing, and error handling
  */
 async function sendMessage() {
-  const userInput = getAndClearInput();
+  let userInput = getAndClearInput();
 
   if (!userInput) {
     log.debug('Empty message, ignoring');
@@ -270,6 +273,18 @@ async function sendMessage() {
   if (config && config.autoStopOnNewMessage) {
     stopSpeech();
   }
+
+  // Parse leading @tool mention and set tool accordingly
+  try {
+    const cfgTM = window.CONFIG?.toolMentions || {};
+    if (cfgTM.enabled !== false) {
+      const parsed = parseLeadingToolMention(userInput);
+      if (parsed && parsed.toolId) {
+        setSelectedTool(parsed.toolId);
+        userInput = parsed.stripped || '';
+      }
+    }
+  } catch {}
 
   // Build final prompt with labeled contexts
   const cfg = window.CONFIG?.contextSelection || {};
@@ -731,6 +746,7 @@ async function initializeSidePanel() {
     initializeTextareaHeight();
     setupTextareaResizing();
     setupToolsMenu();
+    setupToolMentions();
     setupSpeechSettings();
     autoGrowTextarea();
 

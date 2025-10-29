@@ -317,6 +317,29 @@ const CONFIG = {
   },
 
   // ============================================
+  // TOOL MENTIONS (@tool)
+  // Configuration for inline @tool mentions in the input
+  // ============================================
+  toolMentions: {
+    enabled: true,
+    trigger: '@',
+    allowMultiple: false,
+    removeFromMessage: true,
+    autocomplete: {
+      enabled: true,
+      minChars: 0,
+      maxVisible: 6,
+      highlightMatch: true,
+    },
+    styling: {
+      mentionColor: '#7B61FF',
+      mentionBackground: 'rgba(123, 97, 255, 0.10)',
+      mentionBorderRadius: '4px',
+      mentionPadding: '2px 4px',
+    },
+  },
+
+  // ============================================
   // Z-INDEX (Layer Priority)
   // Controls which elements appear on top of others
   // Higher numbers = closer to user (on top)
