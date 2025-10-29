@@ -308,12 +308,14 @@ async function sendMessage() {
   // Hide onboarding help after first user message
   hideOnboardingHelp();
 
-  // Display user message
-  appendMessage(userInput, 'user');
-
   // If not chat tool, route as usual
   const tool = getSelectedTool();
   if (tool !== TOOLS.CHAT) {
+    // For ChromePad, don't show user message bubble (it just opens the interface)
+    if (tool !== TOOLS.CHROMEPAD) {
+      // Display user message for other tools
+      appendMessage(userInput, 'user');
+    }
     try {
       // For @Page, if a chunk is selected, wrap prompt and send as chat; otherwise trigger capture flow
       if (tool === TOOLS.PAGE) {
@@ -350,7 +352,10 @@ async function sendMessage() {
     return;
   }
 
-  // Controlled chat flow with cancel support
+  // Controlled chat flow with cancel support (CHAT tool only)
+  // Display user message for chat
+  appendMessage(userInput, 'user');
+  
   const inputElement = getInputElement();
   const aiMessageElement = appendMessage('', 'ai');
 
@@ -752,10 +757,9 @@ function bindEventListeners() {
     const cfg = window.CONFIG?.pageContent || {};
     if (cfg.clearOnTabSwitch && chrome && chrome.tabs && chrome.tabs.onActivated) {
       chrome.tabs.onActivated.addListener(() => {
+        // Silently clear page context without posting an AI bubble
         clearPageState();
         try { clearPagePill(); } catch {}
-        const msg = String(cfg.clearedOnTabSwitchMessage || 'Page context cleared (tab switched).');
-        appendMessage(msg, 'ai');
       });
     }
   } catch {}

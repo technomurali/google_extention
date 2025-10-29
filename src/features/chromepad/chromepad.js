@@ -22,6 +22,9 @@ import { renderMarkdown } from '../../services/markdown.js';
 
 const log = logger.create('ChromePad');
 
+// Track if ChromePad list is already shown to prevent duplicates
+let chromePadListVisible = false;
+
 // -------------------------------------------------------------
 // Processing animation (Option 2: Pulsing Glow)
 // -------------------------------------------------------------
@@ -182,6 +185,13 @@ function getPreviewLines(text, maxLines = HOVER_PREVIEW_LINES) {
 }
 
 export async function renderNotesListBubble() {
+  // Prevent duplicate lists in the same session
+  if (chromePadListVisible) {
+    log.debug('ChromePad list already visible, skipping duplicate render');
+    return;
+  }
+  chromePadListVisible = true;
+
   const body = appendMessage('', 'ai');
   body.innerHTML = '';
   body.style.padding = '8px';
@@ -373,6 +383,42 @@ export async function renderNotesListBubble() {
       actions.style.display = 'flex';
       actions.style.gap = '4px';
 
+      // Preview button (Eye icon SVG)
+      const previewBtn = document.createElement('button');
+      previewBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </svg>`;
+      previewBtn.style.background = 'none';
+      previewBtn.style.border = 'none';
+      previewBtn.style.cursor = 'pointer';
+      previewBtn.style.padding = '2px 4px';
+      previewBtn.style.opacity = '0.6';
+      previewBtn.style.transition = 'opacity 0.15s ease';
+      previewBtn.style.display = 'inline-flex';
+      previewBtn.style.alignItems = 'center';
+      previewBtn.style.justifyContent = 'center';
+      previewBtn.title = 'Preview';
+      
+      // Hide content tooltip when hovering button
+      previewBtn.addEventListener('mouseenter', (e) => {
+        e.stopPropagation();
+        previewBtn.style.opacity = '1';
+        if (tooltip && tooltip.parentElement) {
+          tooltip.style.opacity = '0';
+          setTimeout(() => {
+            if (tooltip && tooltip.parentElement) {
+              document.body.removeChild(tooltip);
+            }
+          }, 200);
+        }
+      });
+      previewBtn.addEventListener('mouseleave', () => previewBtn.style.opacity = '0.6');
+      previewBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await renderEditorBubble(n.id, true); // true = open in preview mode
+      });
+
       const editBtn = document.createElement('button');
       editBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
@@ -474,6 +520,7 @@ export async function renderNotesListBubble() {
       });
 
       actions.appendChild(askBtn);
+      actions.appendChild(previewBtn);
       actions.appendChild(editBtn);
       actions.appendChild(delBtn);
 
@@ -506,7 +553,10 @@ function countWords(text) {
   return trimmed.split(/\s+/).length;
 }
 
-export async function renderEditorBubble(noteId) {
+export async function renderEditorBubble(noteId, startInPreview = false) {
+  // Hide list when opening editor
+  chromePadListVisible = false;
+
   const note = await getNoteById(noteId);
   if (!note) {
     const err = appendMessage('Note not found.', 'ai');
@@ -857,7 +907,41 @@ export async function renderEditorBubble(noteId) {
 
   minMaxBtn.addEventListener('click', toggleBubbleMinimized);
 
-  // ORDER: Generate, Ask iChrome, Read Loud, Translate, Proofread, Rewrite, Save, Delete, Close, Min/Max
+  // Preview/Edit toggle buttons
+  const previewModeBtn = document.createElement('button');
+  previewModeBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+    <circle cx="12" cy="12" r="3"></circle>
+  </svg>`;
+  previewModeBtn.style.background = 'none';
+  previewModeBtn.style.border = 'none';
+  previewModeBtn.style.cursor = 'pointer';
+  previewModeBtn.style.opacity = '0.6';
+  previewModeBtn.style.padding = '2px 4px';
+  previewModeBtn.style.display = 'inline-flex';
+  previewModeBtn.style.alignItems = 'center';
+  previewModeBtn.style.justifyContent = 'center';
+  previewModeBtn.title = 'Preview';
+  previewModeBtn.addEventListener('mouseenter', () => previewModeBtn.style.opacity = '1');
+  previewModeBtn.addEventListener('mouseleave', () => previewModeBtn.style.opacity = '0.6');
+
+  const editModeBtn = document.createElement('button');
+  editModeBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+  </svg>`;
+  editModeBtn.style.background = 'none';
+  editModeBtn.style.border = 'none';
+  editModeBtn.style.cursor = 'pointer';
+  editModeBtn.style.opacity = '0.6';
+  editModeBtn.style.padding = '2px 4px';
+  editModeBtn.style.display = 'inline-flex';
+  editModeBtn.style.alignItems = 'center';
+  editModeBtn.style.justifyContent = 'center';
+  editModeBtn.title = 'Edit';
+  editModeBtn.addEventListener('mouseenter', () => editModeBtn.style.opacity = '1');
+  editModeBtn.addEventListener('mouseleave', () => editModeBtn.style.opacity = '0.6');
+
+  // ORDER: Generate, Ask iChrome, Read Loud, Translate, Proofread, Rewrite, Preview, Edit, Save, Delete, Close, Min/Max
   actions.appendChild(genBtn);
   actions.appendChild(askBtn);
   actions.appendChild(readBtn);
@@ -865,6 +949,8 @@ export async function renderEditorBubble(noteId) {
   actions.appendChild(translateHdrBtn);
   actions.appendChild(proofBtn);
   actions.appendChild(rewriteBtn);
+  actions.appendChild(previewModeBtn);
+  actions.appendChild(editModeBtn);
   actions.appendChild(saveBtn);
   actions.appendChild(delBtn);
   actions.appendChild(minMaxBtn);
@@ -920,6 +1006,7 @@ export async function renderEditorBubble(noteId) {
   mdPreview.style.marginTop = '8px';
   mdPreview.style.fontSize = '13px';
   mdPreview.style.lineHeight = '1.5';
+  let lastMdRenderTs = 0;
 
   // Helper to render markdown preview
   function updateMarkdownPreview() {
@@ -986,6 +1073,9 @@ export async function renderEditorBubble(noteId) {
         textarea.value = textToAdd;
       }
       updateStats();
+      if (mdPreview.style.display !== 'none') {
+        try { mdPreview.innerHTML = renderMarkdown(textarea.value || ''); } catch { mdPreview.textContent = textarea.value || ''; }
+      }
       return;
     }
 
@@ -1012,6 +1102,9 @@ export async function renderEditorBubble(noteId) {
         // Show full text immediately on abort
         textarea.value = existingText + prefix + textToAdd;
         updateStats();
+        if (mdPreview.style.display !== 'none') {
+          try { mdPreview.innerHTML = renderMarkdown(textarea.value || ''); } catch { mdPreview.textContent = textarea.value || ''; }
+        }
       }
     } finally {
       currentAnimationAbort = null;
@@ -1042,6 +1135,16 @@ export async function renderEditorBubble(noteId) {
         // Update stats and scroll
         updateStats();
         textarea.scrollTop = textarea.scrollHeight;
+
+        // Progressive markdown preview update (throttled)
+        if (mdPreview.style.display !== 'none') {
+          const nowTs = Date.now();
+          if (nowTs - lastMdRenderTs > 120) {
+            try { mdPreview.innerHTML = renderMarkdown(textarea.value || ''); }
+            catch { mdPreview.textContent = textarea.value || ''; }
+            lastMdRenderTs = nowTs;
+          }
+        }
 
         setTimeout(typeNext, delayMs);
       }
@@ -1271,32 +1374,46 @@ export async function renderEditorBubble(noteId) {
   stats.style.display = 'flex';
   stats.style.gap = '8px';
 
-  // Preview toggle
-  const previewToggle = document.createElement('button');
-  previewToggle.type = 'button';
-  previewToggle.textContent = 'Preview';
-  previewToggle.style.background = 'transparent';
-  previewToggle.style.color = 'inherit';
-  previewToggle.style.border = '1px solid rgba(255,255,255,0.2)';
-  previewToggle.style.borderRadius = '6px';
-  previewToggle.style.padding = '2px 8px';
-  previewToggle.style.cursor = 'pointer';
-  previewToggle.style.fontSize = '11px';
-  previewToggle.style.opacity = '0.8';
-  let previewOn = false;
-  previewToggle.addEventListener('click', () => {
-    previewOn = !previewOn;
-    previewToggle.textContent = previewOn ? 'Edit' : 'Preview';
+  // Unified preview mode state
+  let previewOn = startInPreview || false;
+
+  // Unified toggle function
+  function togglePreviewMode(showPreview) {
+    previewOn = showPreview;
+    
     if (previewOn) {
       updateMarkdownPreview();
       contentArea.style.display = 'none';
       mdPreview.style.display = 'block';
+      
+      // Update header buttons
+      previewModeBtn.style.opacity = '1';
+      editModeBtn.style.opacity = '0.6';
     } else {
       mdPreview.style.display = 'none';
       contentArea.style.display = 'block';
       contentArea.focus();
+      
+      // Update header buttons
+      previewModeBtn.style.opacity = '0.6';
+      editModeBtn.style.opacity = '1';
     }
-  });
+  }
+
+  // Wire up header Preview button
+  previewModeBtn.addEventListener('click', () => togglePreviewMode(true));
+  
+  // Wire up header Edit button
+  editModeBtn.addEventListener('click', () => togglePreviewMode(false));
+
+  // Initialize mode on load
+  if (startInPreview) {
+    togglePreviewMode(true);
+  } else {
+    // Set initial button states for edit mode
+    previewModeBtn.style.opacity = '0.6';
+    editModeBtn.style.opacity = '1';
+  }
 
   const wordCount = document.createElement('span');
   const charCount = document.createElement('span');
@@ -1317,7 +1434,6 @@ export async function renderEditorBubble(noteId) {
   saveIndicator.style.transition = 'opacity 0.2s ease';
 
   statusBar.appendChild(stats);
-  statusBar.appendChild(previewToggle);
   statusBar.appendChild(saveIndicator);
 
   updateStats();
@@ -1643,6 +1759,7 @@ export async function renderEditorBubble(noteId) {
   });
 
   backBtn.addEventListener('click', async () => {
+    chromePadListVisible = false;
     await renderNotesListBubble();
     scrollToBottom();
   });
@@ -1652,6 +1769,7 @@ export async function renderEditorBubble(noteId) {
     const ok = confirm(`Delete "${note.name}"?`);
     if (!ok) return;
     await deleteNote(noteId);
+    chromePadListVisible = false;
     await renderNotesListBubble();
     scrollToBottom();
   });
