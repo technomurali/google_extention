@@ -734,6 +734,19 @@ export function setSelectedTool(tool) {
       tool === TOOLS.CHAT ? '' : `${STATUS_MESSAGES.TOOL_PREFIX}${tool}`;
   }
 
+  // Update input placeholder to reflect current tool (e.g., "Type your message — @iChromeChat")
+  try {
+    if (elements.input) {
+      const cfg = window.CONFIG || {};
+      const base = (cfg.labels && cfg.labels.searchPlaceholder) || 'Type your message...';
+      // Find label from tool mentions catalog (e.g., @iChromeChat)
+      const catalog = getToolCatalog();
+      const found = catalog.find((t) => t.id === tool);
+      const display = found && found.label ? found.label : `@${tool}`;
+      elements.input.placeholder = `${base} — ${display}`;
+    }
+  } catch {}
+
   log.debug('Tool selected:', tool);
   try {
     const ev = new CustomEvent('tool-selected', { bubbles: true, composed: true, detail: { tool } });
@@ -1250,6 +1263,8 @@ export function appendMessage(text, role) {
       bubble.appendChild(exportBtn);
     } catch {}
 
+    // Ask iChrome button is added after generation completes via helper below
+
     const btn = document.createElement('button');
     btn.className = 'msg-minimize-btn';
     btn.title = 'Minimize';
@@ -1363,6 +1378,37 @@ export function renderResults(items, existingElement = null) {
     wrapper.appendChild(row);
   });
 
+  // List-level Ask iChrome action: adds the whole results set as one context pill
+  try {
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.marginTop = '8px';
+    const askAll = document.createElement('button');
+    askAll.type = 'button';
+    askAll.className = 'send-btn';
+    askAll.textContent = 'Ask iChrome (these results)';
+    askAll.addEventListener('click', () => {
+      try {
+        const label = '📚 Results';
+        // Combine title + URL lines up to ~2000 chars
+        const lines = [];
+        for (const it of items) {
+          const line = `${it.title || ''} — ${it.url || ''}`.trim();
+          if (!line) continue;
+          // Stop if adding would exceed ~2000 chars
+          const next = lines.concat([line]).join('\n');
+          if (next.length > 1900) break;
+          lines.push(line);
+        }
+        const text = lines.join('\n');
+        if (text) addExternalContext(text, label);
+      } catch {}
+    });
+    actions.appendChild(askAll);
+    wrapper.appendChild(actions);
+  } catch {}
+
   if (existingElement) {
     existingElement.innerHTML = '';
     existingElement.appendChild(wrapper);
@@ -1386,6 +1432,12 @@ function createResultRow(item) {
   row.className = SELECTORS.CLASS_HISTORY_ITEM;
   row.setAttribute('role', 'button');
   row.setAttribute('tabindex', '0');
+  // Ensure predictable horizontal layout so action buttons don't collapse
+  try {
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+  } catch {}
 
   // Favicon
   const favicon = document.createElement('img');
@@ -1420,6 +1472,8 @@ function createResultRow(item) {
 
   row.appendChild(favicon);
   row.appendChild(textColumn);
+
+  // (Removed per-row Ask iChrome button; action moved to list-level in renderResults)
 
   // Click/Enter to open URL
   const openUrl = () => {
@@ -1813,6 +1867,94 @@ export function toggleSendStopButton(showStop) {
     elements.sendButton.classList.remove('stop-mode');
     elements.sendButton.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 12L21 3L14 21L11 13L3 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   }
+}
+
+/**
+ * Adds an "Ask iChrome (this result)" button to a finished AI bubble body.
+ * Safe to call multiple times; only adds once per bubble.
+ * @param {HTMLElement} body
+ */
+export function addAskThisResultButton(body) {
+  try {
+    if (!body) return;
+    const bubble = body.parentElement;
+    if (!bubble) return;
+    if (bubble.dataset && bubble.dataset.askBtnAttached === '1') return;
+    const btn = document.createElement('button');
+    btn.className = 'send-btn';
+    btn.textContent = 'Ask iChrome (this result)';
+    btn.style.marginTop = '6px';
+    btn.style.alignSelf = 'flex-start';
+    btn.addEventListener('click', () => {
+      try {
+        const label = '🧠 This result';
+        const raw = String(bubble.dataset.rawMarkdown || body.textContent || '').trim();
+        if (!raw) return;
+        addExternalContext(raw.slice(0, 2000), label);
+        try { setSelectedTool(TOOLS.CHAT); } catch {}
+      } catch {}
+    });
+    bubble.appendChild(btn);
+    if (bubble.dataset) bubble.dataset.askBtnAttached = '1';
+  } catch {}
+}
+
+/**
+ * Shows a lightweight "Thinking…" indicator inside a bubble body.
+ * Returns a stop function to remove it.
+ * @param {HTMLElement} body
+ * @param {string} [label]
+ * @returns {() => void}
+ */
+export function startThinking(body, label = 'Thinking…') {
+  let timer = null;
+  let alive = true;
+  const holder = document.createElement('div');
+  holder.style.opacity = '0.7';
+  holder.style.fontSize = '12px';
+  const span = document.createElement('span');
+  span.textContent = label;
+  holder.appendChild(span);
+  body.appendChild(holder);
+  let dots = 0;
+  timer = setInterval(() => {
+    if (!alive) return;
+    dots = (dots + 1) % 4;
+    span.textContent = label + (dots ? '.'.repeat(dots) : '');
+  }, 400);
+  return () => {
+    alive = false;
+    try { if (timer) clearInterval(timer); } catch {}
+    try { if (holder && holder.parentElement) holder.parentElement.removeChild(holder); } catch {}
+  };
+}
+
+/**
+ * Progressive typewriter effect for plain text, then final markdown render.
+ * @param {HTMLElement} body
+ * @param {string} fullText
+ * @param {number} [step]
+ * @param {number} [interval]
+ * @returns {Promise<void>}
+ */
+export async function typewriterRenderMarkdown(body, fullText, step = 3, interval = 12) {
+  const s = String(fullText || '');
+  if (!s) { body.innerHTML = ''; return; }
+  return new Promise((resolve) => {
+    let i = 0;
+    function tick() {
+      i = Math.min(s.length, i + step);
+      body.textContent = s.slice(0, i);
+      scrollToBottom();
+      if (i >= s.length) {
+        try { body.innerHTML = renderMarkdown(s); } catch { body.textContent = s; }
+        resolve();
+        return;
+      }
+      setTimeout(tick, interval);
+    }
+    tick();
+  });
 }
 
 // For non-module script compatibility

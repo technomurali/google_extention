@@ -9,13 +9,14 @@ export async function captureActivePage() {
     target: { tabId: tab.id },
     func: () => {
       try {
-        function getVisibleText(node) {
-          const walker = document.createTreeWalker(node || document.body, NodeFilter.SHOW_TEXT, {
+        function collectVisibleTextFromRoot(root) {
+          const parts = [];
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
             acceptNode: (n) => {
               if (!n || !n.parentElement) return NodeFilter.FILTER_REJECT;
               const parent = n.parentElement;
               const tag = parent.tagName;
-              if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS', 'VIDEO', 'AUDIO'].includes(tag)) return NodeFilter.FILTER_REJECT;
+              if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'CANVAS', 'VIDEO', 'AUDIO'].includes(tag)) return NodeFilter.FILTER_REJECT;
               const text = n.nodeValue || '';
               if (!text.trim()) return NodeFilter.FILTER_REJECT;
               const style = window.getComputedStyle(parent);
@@ -23,21 +24,51 @@ export async function captureActivePage() {
               return NodeFilter.FILTER_ACCEPT;
             }
           });
-
-          const parts = [];
           while (walker.nextNode()) parts.push(walker.currentNode.nodeValue);
-          return parts.join('\n');
+          return parts;
+        }
+
+        function getVisibleTextDeep(doc) {
+          const chunks = [];
+          // Main document
+          chunks.push(...collectVisibleTextFromRoot(doc.body || doc));
+          // Shadow roots
+          try {
+            const all = doc.querySelectorAll('*');
+            all.forEach((el) => {
+              try {
+                if (el && el.shadowRoot) {
+                  chunks.push(...collectVisibleTextFromRoot(el.shadowRoot));
+                }
+              } catch {}
+            });
+          } catch {}
+          // Same-origin iframes
+          let skippedIframes = 0;
+          try {
+            const iframes = doc.querySelectorAll('iframe');
+            iframes.forEach((f) => {
+              try {
+                if (f && f.contentDocument) {
+                  chunks.push(...collectVisibleTextFromRoot(f.contentDocument.body || f.contentDocument));
+                }
+              } catch { skippedIframes += 1; }
+            });
+          } catch {}
+          return { text: chunks.join('\n'), skippedIframes };
         }
         function extractHeadings() {
           const hs = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'));
           return hs.map(h => (h.textContent || '').trim()).filter(Boolean);
         }
+        const deep = getVisibleTextDeep(document);
         return {
           title: document.title || '',
           url: location.href,
-          text: getVisibleText(document.body),
+          text: deep.text,
           headings: extractHeadings(),
           timestamp: Date.now(),
+          skippedIframes: deep.skippedIframes || 0,
         };
       } catch (err) {
         return { error: String(err && err.message || err) };

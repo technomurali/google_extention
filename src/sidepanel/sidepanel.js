@@ -65,8 +65,58 @@ import { logger } from '../core/logger.js';
 import { formatErrorForUser } from '../core/errors.js';
 import { handleChromePadRequest, handleChromePadSelected } from '../features/chromepad/chromepad.js';
 import { renderMarkdown } from '../services/markdown.js';
+import { PageAdapter } from '../services/retrieval/adapters/pageAdapter.js';
+import { ChromePadAdapter } from '../services/retrieval/adapters/chromepadAdapter.js';
+import { askWholeCorpus, retrieveRefs, answerWithRetrieval } from '../services/retrieval/engine.js';
+import { HistoryAdapter } from '../services/retrieval/adapters/historyAdapter.js';
+import { DownloadsAdapter } from '../services/retrieval/adapters/downloadsAdapter.js';
 
 const log = logger.create('SidePanel');
+// Renders answer text and clickable sources; clicking a source shows its section content
+async function renderAnswerWithSources(container, out, adapter, context, titleMap) {
+  try {
+    container.innerHTML = '';
+    const ans = document.createElement('div');
+    ans.innerHTML = renderMarkdown(String(out.text || ''));
+    container.appendChild(ans);
+
+    const used = out && out.usedRefs ? out.usedRefs : [];
+    if (used.length) {
+      const hdr = document.createElement('div');
+      hdr.style.marginTop = '8px';
+      hdr.textContent = 'Sources:';
+      container.appendChild(hdr);
+
+      const list = document.createElement('ul');
+      used.forEach((u) => {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'send-btn';
+        const docTitle = titleMap && titleMap.get && titleMap.get(String(u.docId));
+        const label = docTitle ? `${docTitle}${u.heading ? ' — ' + u.heading : ''}` : (u.heading || u.chunkId);
+        btn.textContent = label;
+        btn.addEventListener('click', async () => {
+          try {
+            const docs = await adapter.listDocuments(context);
+            const docById = new Map(docs.map((d) => [String(d.id), d]));
+            const targetDoc = docById.get(String(u.docId)) || docs[0];
+            const chunks = await adapter.chunkDocument(targetDoc, {});
+            const lookup = new Map(chunks.map((c) => [String(c.id), c]));
+            const chunk = lookup.get(String(u.chunkId));
+            if (!chunk) return;
+            const view = appendMessage('', 'ai');
+            const title = (docTitle || targetDoc.title || 'Document') + (chunk.heading ? ' — ' + chunk.heading : '');
+            view.innerHTML = renderMarkdown(`**${title}**\n\n${chunk.content || ''}`);
+          } catch {}
+        });
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+      container.appendChild(list);
+    }
+  } catch {}
+}
 
 // Session-scoped context for History tool (persists within side panel session)
 let lastHistoryContext = {
@@ -78,6 +128,10 @@ let lastHistoryContext = {
 let isGenerating = false;
 let currentAbortController = null;
 let manualStopFlag = false; // Fallback if AbortSignal isn't supported
+
+// Page capture dedupe flags
+let isPageCaptureInProgress = false;
+let lastPageCaptureAt = 0;
 
 /**
  * Handles history query requests
@@ -239,17 +293,57 @@ async function routeMessage(queryText) {
 
   // Explicit tool selection takes precedence
   switch (selectedTool) {
-    case TOOLS.HISTORY:
-      await handleHistoryRequest(queryText, { intent: 'history' });
+    case TOOLS.HISTORY: {
+      const q = String(queryText || '').trim();
+      const looksQuestion = /[?]$|\b(what|how|why|summar|explain|compare|difference)\b/i.test(q);
+      if (!q || !looksQuestion) {
+        await handleHistoryRequest(queryText, { intent: 'history' });
+        return;
+      }
+      try {
+        const body = appendMessage('', 'ai');
+        body.textContent = 'Analyzing recent history…';
+        const out = await answerWithRetrieval({ adapter: HistoryAdapter, context: { days: 7, text: '' }, query: q, config: { retrieval: { expandSynonyms: true, rerankK: 4 }, reading: { kMax: 3 } } });
+        const parts = [out.text || ''];
+        const used = out.usedRefs || [];
+        if (used.length) {
+          parts.push('\n\nSources:');
+          used.forEach((u) => parts.push(`- ${u.heading || u.chunkId}`));
+        }
+        body.innerHTML = renderMarkdown(parts.join('\n'));
+      } catch (err) {
+        appendMessage('Could not analyze your history.', 'ai');
+      }
       return;
+    }
 
     case TOOLS.BOOKMARKS:
       await handleBookmarksRequest(queryText);
       return;
 
-    case TOOLS.DOWNLOADS:
-      await handleDownloadsRequest(queryText);
+    case TOOLS.DOWNLOADS: {
+      const q = String(queryText || '').trim();
+      const looksQuestion = /[?]$|\b(what|how|why|summar|explain|compare|difference)\b/i.test(q);
+      if (!q || !looksQuestion) {
+        await handleDownloadsRequest(queryText);
+        return;
+      }
+      try {
+        const body = appendMessage('', 'ai');
+        body.textContent = 'Analyzing downloads…';
+        const out = await answerWithRetrieval({ adapter: DownloadsAdapter, context: { text: '' }, query: q, config: { retrieval: { expandSynonyms: true, rerankK: 4 }, reading: { kMax: 2, perChunkTokenCap: 800 } } });
+        const parts = [out.text || ''];
+        const used = out.usedRefs || [];
+        if (used.length) {
+          parts.push('\n\nSources:');
+          used.forEach((u) => parts.push(`- ${u.heading || u.chunkId}`));
+        }
+        body.innerHTML = renderMarkdown(parts.join('\n'));
+      } catch (err) {
+        appendMessage('Could not analyze your downloads.', 'ai');
+      }
       return;
+    }
 
     case TOOLS.PAGE:
       await handlePageRequest(queryText);
@@ -297,6 +391,25 @@ async function sendMessage() {
     }
   } catch {}
 
+  // If user only typed a tool mention (no text), trigger default behavior for that tool
+  try {
+    const toolAfterMention = getSelectedTool();
+    if (!String(userInput || '').trim()) {
+      if (toolAfterMention === TOOLS.PAGE) {
+        // Avoid duplicate capture if it just ran via tool-selected listener
+        const hasContext = Array.isArray(pageState.chunks) && pageState.chunks.length > 0;
+        if (!hasContext) {
+          await handlePageRequest('');
+        }
+        return;
+      }
+      if (toolAfterMention === TOOLS.CHROMEPAD) {
+        await handleChromePadSelected();
+        return;
+      }
+    }
+  } catch {}
+
   // Build final prompt with labeled contexts
   const cfg = window.CONFIG?.contextSelection || {};
   const labelPrefix = String(cfg.contextLabelPrefix || 'Context');
@@ -313,8 +426,10 @@ async function sendMessage() {
   if (tool !== TOOLS.CHAT) {
     // For ChromePad, don't show user message bubble (it just opens the interface)
     if (tool !== TOOLS.CHROMEPAD) {
-      // Display user message for other tools
-      appendMessage(userInput, 'user');
+      // Display user message only when there's actual text
+      if (String(userInput || '').trim()) {
+        appendMessage(userInput, 'user');
+      }
     }
     try {
       // For @Page, if a chunk is selected, wrap prompt and send as chat; otherwise trigger capture flow
@@ -337,7 +452,73 @@ async function sendMessage() {
             await handlePageRequest(finalPrompt);
           }
         } else {
-          await handlePageRequest(finalPrompt);
+          // Phase 3: retrieve + progressive read + synthesize answer with sources (interactive)
+          try {
+            const body = appendMessage('', 'ai');
+            body.textContent = 'Analyzing and answering from page sections…';
+            let stopThink = null;
+            try { const { startThinking } = await import('../ui/ui.js'); stopThink = startThinking(body, 'Thinking'); } catch {}
+            const ctx = { url: pageState.url || '' };
+            const run = async (kMax) => {
+              const out = await answerWithRetrieval({ adapter: PageAdapter, context: ctx, query: userInput, config: { retrieval: { topM: 12, rerankK: 4, useLLM: false, expandSynonyms: true }, reading: { kMax: kMax, perChunkTokenCap: 1400, reserveAnswerTokens: 800 } } });
+              if (stopThink) { try { stopThink(); } catch {} stopThink = null; }
+              await renderAnswerWithSources(body, out, PageAdapter, ctx);
+              return out;
+            };
+            const first = await run(3);
+            // Add thorough mode button when confidence low/medium
+            try {
+              if (first && first.confidence !== 'high') {
+                const actions = document.createElement('div');
+                actions.style.marginTop = '8px';
+                const btn = document.createElement('button');
+                btn.className = 'send-btn';
+                btn.textContent = 'Thorough mode (+1 section)';
+                btn.addEventListener('click', async () => { btn.disabled = true; await run(4); btn.disabled = false; });
+                actions.appendChild(btn);
+                body.appendChild(actions);
+              }
+            } catch {}
+          } catch (err) {
+            appendMessage('Could not produce an answer from the page sections.', 'ai');
+          }
+        }
+      } else if (tool === TOOLS.CHROMEPAD) {
+        const qTrim = String(userInput || '').trim();
+        if (!qTrim) {
+          await handleChromePadSelected();
+        } else {
+          try {
+            const body = appendMessage('', 'ai');
+            body.textContent = 'Analyzing and answering from your notes…';
+            let stopThink = null;
+            try { const { startThinking } = await import('../ui/ui.js'); stopThink = startThinking(body, 'Thinking'); } catch {}
+            const run = async (kMax) => {
+              const out = await answerWithRetrieval({ adapter: ChromePadAdapter, context: {}, query: qTrim, config: { retrieval: { topM: 12, rerankK: 4, useLLM: false, expandSynonyms: true }, reading: { kMax: kMax, perChunkTokenCap: 1200, reserveAnswerTokens: 800 } } });
+              // Map docId → note title for clickable sources
+              let titleMap = new Map();
+              try {
+                const docs = await ChromePadAdapter.listDocuments({});
+                titleMap = new Map(docs.map(d => [String(d.id), d.title || 'Untitled']));
+              } catch {}
+              if (stopThink) { try { stopThink(); } catch {} stopThink = null; }
+              await renderAnswerWithSources(body, out, ChromePadAdapter, {}, titleMap);
+              return out;
+            };
+            const firstN = await run(3);
+            if (firstN && firstN.confidence !== 'high') {
+              const actions = document.createElement('div');
+              actions.style.marginTop = '8px';
+              const btn = document.createElement('button');
+              btn.className = 'send-btn';
+              btn.textContent = 'Thorough mode (+1 section)';
+              btn.addEventListener('click', async () => { btn.disabled = true; await run(4); btn.disabled = false; });
+              actions.appendChild(btn);
+              body.appendChild(actions);
+            }
+          } catch (err) {
+            appendMessage('Could not produce an answer from your notes.', 'ai');
+          }
         }
       } else {
         await routeMessage(finalPrompt);
@@ -347,7 +528,12 @@ async function sendMessage() {
       const errorMessage = formatErrorForUser(error, 'An error occurred processing your request');
       appendMessage(errorMessage, 'ai');
     } finally {
-      clearSelectedContextsAfterSend();
+      try {
+        const cfgCtx = window.CONFIG?.contextSelection || {};
+        if (cfgCtx && cfgCtx.autoClearAfterSend) {
+          clearSelectedContextsAfterSend();
+        }
+      } catch {}
     }
     return;
   }
@@ -358,6 +544,7 @@ async function sendMessage() {
   
   const inputElement = getInputElement();
   const aiMessageElement = appendMessage('', 'ai');
+  let stopThinking = null;
 
   isGenerating = true;
   manualStopFlag = false;
@@ -367,12 +554,15 @@ async function sendMessage() {
 
   try {
     const options = currentAbortController ? { signal: currentAbortController.signal } : {};
+    // Show thinking indicator until first chunk arrives
+    try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}
     const stream = await sendStreamingPrompt(finalPrompt, options);
     let buffer = '';
     let lastRender = 0;
     for await (const chunk of stream) {
       if (manualStopFlag) break;
       buffer += chunk;
+      if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
       const now = Date.now();
       if (now - lastRender > 120) {
         aiMessageElement.innerHTML = renderMarkdown(unwrapMarkdownFenceProgressive(buffer));
@@ -383,14 +573,28 @@ async function sendMessage() {
     // Final render as markdown
     const unwrapped = unwrapFullCodeFence(buffer);
     aiMessageElement.innerHTML = renderMarkdown(unwrapped);
+    try { 
+      // Add Ask iChrome button after message completes
+      const { addAskThisResultButton } = await import('../ui/ui.js');
+      addAskThisResultButton(aiMessageElement);
+    } catch {}
   } catch (streamError) {
     const aborted = (currentAbortController && currentAbortController.signal && currentAbortController.signal.aborted) || manualStopFlag;
     if (!aborted) {
       log.warn('Streaming failed, trying non-streaming:', streamError);
       try {
         const response = await sendPrompt(finalPrompt);
+        // Stop thinking if still running
+        if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
         const unwrapped2 = unwrapFullCodeFence(response);
-        aiMessageElement.innerHTML = renderMarkdown(unwrapped2);
+        // Typewriter effect for fallback path
+        try {
+          const { typewriterRenderMarkdown } = await import('../ui/ui.js');
+          await typewriterRenderMarkdown(aiMessageElement, unwrapped2, 3, 10);
+        } catch {
+          aiMessageElement.innerHTML = renderMarkdown(unwrapped2);
+        }
+        try { const { addAskThisResultButton } = await import('../ui/ui.js'); addAskThisResultButton(aiMessageElement); } catch {}
       } catch (promptError) {
         log.error('Chat request failed:', promptError);
         const errorMsg = formatErrorForUser(promptError, ERROR_MESSAGES.AI_UNAVAILABLE);
@@ -403,7 +607,13 @@ async function sendMessage() {
     if (inputElement) inputElement.disabled = false;
     currentAbortController = null;
     manualStopFlag = false;
-    clearSelectedContextsAfterSend();
+    if (stopThinking) { try { stopThinking(); } catch {} }
+    try {
+      const cfgCtx = window.CONFIG?.contextSelection || {};
+      if (cfgCtx && cfgCtx.autoClearAfterSend) {
+        clearSelectedContextsAfterSend();
+      }
+    } catch {}
   }
 }
 
@@ -435,6 +645,13 @@ function unwrapMarkdownFenceProgressive(text) {
  */
 async function handlePageRequest(_queryText) {
   const cfg = window.CONFIG?.pageContent || {};
+
+  // Dedupe: skip if a capture just finished or is in progress
+  const nowTs = Date.now();
+  if (isPageCaptureInProgress || (nowTs - lastPageCaptureAt) < 1000) {
+    return;
+  }
+  isPageCaptureInProgress = true;
 
   // 1) Announce capturing
   const aiMsg = appendMessage(cfg.capturingMessage || 'Capturing page content...', 'ai');
@@ -468,31 +685,25 @@ async function handlePageRequest(_queryText) {
       timestamp: Date.now(),
     });
 
-    // 4) Render selection list in a new AI bubble
-    renderChunkSelectionBubble({ title: pageState.title, url: pageState.url }, chunks, async (chunkId) => {
-      selectChunkById(chunkId);
-      const chosen = pageState.chunks.find(c => c.id === chunkId);
-      if (chosen) {
-        // Confirm selection in AI bubble
-        const confirmMsg = appendMessage('', 'ai');
-        const txt = String(cfg.chunkSelectedTemplate || 'Chunk {index} selected: "{heading}"')
-          .replace('{index}', String(chosen.index))
-          .replace('{heading}', String(chosen.heading));
-        confirmMsg.textContent = `${txt}\n${cfg.chunkInstructions || ''}`.trim();
+    // Phase 1: build compact index for the page in background and show progress
+    try {
+      const ctx = { url: pageState.url };
+      // Show lightweight UI progress via retrieval-progress events
+      // Do not await; run in background
+      askWholeCorpus({ adapter: PageAdapter, context: ctx, config: { debug: false } }).catch(() => {});
+    } catch {}
 
-        // Show pill with page icon and heading
-        const label = `${cfg.icon || '📃'} ${chosen.heading} - ${pageState.title}`;
-        showPagePill(label, () => {
-          // Clear state when pill removed
-          clearPageState();
-          clearPagePill();
-        });
-      }
-    });
+    // 4) No chunk selection UI for @Page. Keep UX: whole-page Q&A.
+    try {
+      aiMsg.textContent = 'Page captured. You can now ask about the whole page.';
+    } catch {}
 
   } catch (err) {
     log.error('Page capture failed:', err);
     aiMsg.textContent = cfg.errorCapture || 'Failed to capture page content. Please try again.';
+  } finally {
+    isPageCaptureInProgress = false;
+    lastPageCaptureAt = Date.now();
   }
 }
 
@@ -740,6 +951,29 @@ function bindEventListeners() {
     log.info('Side panel cleanup completed');
   });
 
+  // Retrieval engine progress → subtle status updates (only for @Page)
+  try {
+    let lastProgressTimer = null;
+    document.addEventListener('retrieval-progress', (ev) => {
+      try {
+        const detail = ev && ev.detail || {};
+        const key = String(detail.key || '');
+        if (!key.startsWith('page:')) {
+          // Ignore non-page indexing (e.g., history/downloads) to avoid disturbing their UI
+          return;
+        }
+        const pct = typeof detail.percent === 'number' ? Math.max(0, Math.min(100, Math.round(detail.percent))) : 0;
+        if (detail.phase === 'done') {
+          updateStatus('Index built');
+          if (lastProgressTimer) clearTimeout(lastProgressTimer);
+          lastProgressTimer = setTimeout(() => { try { updateStatus(''); } catch {} }, 1200);
+        } else {
+          updateStatus(`Indexing page… ${pct}%`);
+        }
+      } catch {}
+    });
+  } catch {}
+
   // Start @Page capture immediately when selected (Option A)
   document.addEventListener('tool-selected', (ev) => {
     try {
@@ -781,6 +1015,8 @@ async function initializeSidePanel() {
     initializeElements();
     applyConfiguration();
     enhanceAccessibility();
+    // Refresh placeholder to include current tool label
+    try { setSelectedTool(getSelectedTool()); } catch {}
     
     // Initialize speech service
     const speechAvailable = await initializeSpeech();

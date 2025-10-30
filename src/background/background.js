@@ -107,7 +107,15 @@ function handleTabUpdate(tabId, changeInfo, tab) {
 
   // Validate tab object
   if (!tab || !tab.url) {
-    log.warn(`Tab ${tabId} update has no URL`);
+    // Benign: updates can fire before URL is known or for internal pages
+    log.debug(`Tab ${tabId} update without navigable URL`);
+    return;
+  }
+
+  // Skip non-http(s) schemes (e.g., chrome://, chrome-extension://, about:blank)
+  const url = String(tab.url || '');
+  if (!/^https?:/i.test(url)) {
+    log.debug(`Tab ${tabId} non-http(s) URL, skipping: ${url}`);
     return;
   }
 
