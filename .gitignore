@@ -3,9 +3,6 @@ docs/retrieval_smoke_tests.md
 docs/retrieval_smoke_tests_phase2.md
 docs/retrieval_smoke_tests_phase3.md
 
-# Ignore retrieval service directory
-src/services/retrieval/
-
 # Ignore HTML test files
 test_retrieval_large.html
 test_retrieval_weird.html
