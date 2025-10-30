@@ -83,9 +83,16 @@ function parseConfidence(answerText) {
  * @returns {Promise<{ text: string, usedRefs: { docId: string, chunkId: string, heading?: string }[], confidence: 'low'|'medium'|'high' }>}
  */
 export async function progressiveRead({ adapter, context, query, index, refIds, config }) {
+  const signal = config && config.signal;
+  if (signal && signal.aborted) {
+    throw new Error('aborted');
+  }
   const budget = planAnswerBudget(config);
   const chunkIds = mapRefsToChunkIds(index, refIds);
   const docs = await adapter.listDocuments(context);
+  if (signal && signal.aborted) {
+    throw new Error('aborted');
+  }
   if (!docs || docs.length === 0) throw new Error('No document for reading');
   const docById = new Map(docs.map((d) => [String(d.id), d]));
   const chunkCacheByDoc = new Map(); // docId -> Map(chunkId -> chunk)
@@ -93,6 +100,9 @@ export async function progressiveRead({ adapter, context, query, index, refIds, 
   const usedRefs = [];
   const selected = [];
   for (const cid of chunkIds) {
+    if (signal && signal.aborted) {
+      throw new Error('aborted');
+    }
     // Detect namespaced id `${docId}::chunk-#` for corpus. Otherwise single-doc.
     let docId = null;
     let chunkKey = cid;
@@ -106,6 +116,9 @@ export async function progressiveRead({ adapter, context, query, index, refIds, 
     let cache = chunkCacheByDoc.get(d.id);
     if (!cache) {
       const docChunks = await adapter.chunkDocument(d, {});
+      if (signal && signal.aborted) {
+        throw new Error('aborted');
+      }
       cache = new Map(docChunks.map((x) => [x.id, x]));
       chunkCacheByDoc.set(d.id, cache);
     }
@@ -123,6 +136,9 @@ export async function progressiveRead({ adapter, context, query, index, refIds, 
   }
 
   // Build prompt and ask once for Phase 3 MVP
+  if (signal && signal.aborted) {
+    throw new Error('aborted');
+  }
   const prompt = buildPrompt(index.meta.title || doc.title || '', index.meta.url || doc.url || '', query, selected);
   const answer = await sendPrompt(prompt);
   const confidence = parseConfidence(answer);

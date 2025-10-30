@@ -547,6 +547,17 @@ export function initializeElements() {
     updateContextPillsUI();
   } catch {}
 
+  // Clear context pills when switching away from @iChromeChat
+  try {
+    document.addEventListener('tool-selected', (ev) => {
+      const tool = ev && ev.detail && ev.detail.tool;
+      if (tool && tool !== TOOLS.CHAT && selectedContexts.length > 0) {
+        // Programmatic clear (do not restore previous tool)
+        clearSelectedContextsAfterSend();
+      }
+    }, { signal: abortController.signal });
+  } catch {}
+
   // Keyboard shortcut: Ctrl+T toggles last AI bubble's translate menu
   try {
     document.addEventListener('keydown', (event) => {
@@ -1104,6 +1115,15 @@ export function appendMessage(text, role) {
             const code = target.dataset.lang;
             if (!code) return;
 
+            // Prevent reentrancy: ignore if a translation is already in-flight for this bubble
+            if (bubble.dataset.translateInFlight === '1') return;
+            bubble.dataset.translateInFlight = '1';
+            // Disable all items while translating
+            try {
+              const items = list.querySelectorAll(`.${SELECTORS.CLASS_TRANSLATE_ITEM}`);
+              items.forEach((btn) => { btn.disabled = true; });
+            } catch {}
+
             // Start translation
             log.info(`Translation requested: ${code}`);
             const cfg2 = getConfigTranslation();
@@ -1113,9 +1133,10 @@ export function appendMessage(text, role) {
             }
             const orig = String(bubble.dataset.originalText || body.textContent || '');
             log.debug(`Original text length: ${orig.length}`);
-            // Show translating state
+            // Show translating animated state
             const prev = String(body.textContent || '');
-            body.textContent = cfg2.labels.translating;
+            let stopTranslating = null;
+            try { stopTranslating = startThinking(body, String(cfg2.labels.translating || 'Translating').replace(/\.*$/, '')); } catch {}
             tbtn.disabled = true;
             try {
               log.debug(`Calling translateText for ${code}`);
@@ -1123,6 +1144,7 @@ export function appendMessage(text, role) {
               log.info(`Translation result:`, res);
               if (res && res.ok) {
                 // Animate the translated text appearance
+                if (stopTranslating) { try { stopTranslating(); } catch {} stopTranslating = null; }
                 await animateTextAppearance(body, res.text, cfg2.animationDelayMs);
                 bubble.dataset.currentLang = code;
                 // Update button to show language code
@@ -1134,15 +1156,23 @@ export function appendMessage(text, role) {
                 log.info(`Translation successful to ${code}`);
               } else {
                 log.warn(`Translation failed:`, res?.error);
+                if (stopTranslating) { try { stopTranslating(); } catch {} stopTranslating = null; }
                 body.textContent = prev; // restore
                 tbtn.title = cfg2.labels.translationError;
               }
             } catch (err) {
               log.error(`Translation exception:`, err);
+              if (stopTranslating) { try { stopTranslating(); } catch {} stopTranslating = null; }
               body.textContent = prev;
               tbtn.title = cfg2.labels.translationError;
             } finally {
               tbtn.disabled = false;
+              delete bubble.dataset.translateInFlight;
+              try {
+                const items = list.querySelectorAll(`.${SELECTORS.CLASS_TRANSLATE_ITEM}`);
+                items.forEach((btn) => { btn.disabled = false; });
+              } catch {}
+              if (stopTranslating) { try { stopTranslating(); } catch {} }
               menu.style.display = 'none';
             }
           }, { signal: abortController.signal });
@@ -1153,6 +1183,8 @@ export function appendMessage(text, role) {
 
         tbtn.addEventListener('click', (e) => {
           e.preventDefault();
+          // Ignore clicks while a translation is in-flight
+          if (bubble.dataset.translateInFlight === '1') return;
           // Toggle
           const isOpen = menu.style.display === 'block';
           if (isOpen) {

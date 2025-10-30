@@ -124,6 +124,11 @@ let lastHistoryContext = {
   days: null,
 };
 
+// Lightweight in-flight guards for list fetch handlers
+let isHistoryLoading = false;
+let isBookmarksLoading = false;
+let isDownloadsLoading = false;
+
 // Generation state for chat streaming
 let isGenerating = false;
 let currentAbortController = null;
@@ -139,6 +144,8 @@ let lastPageCaptureAt = 0;
  * @param {Object} classification - Classification from AI
  */
 async function handleHistoryRequest(queryText, classification) {
+  if (isHistoryLoading) return;
+  isHistoryLoading = true;
   const loadingMessage = appendMessage(STATUS_MESSAGES.SEARCHING_HISTORY, 'ai');
 
   try {
@@ -189,6 +196,8 @@ async function handleHistoryRequest(queryText, classification) {
     } else {
       loadingMessage.textContent = formatErrorForUser(error, ERROR_MESSAGES.ERROR_ACCESSING_HISTORY);
     }
+  } finally {
+    isHistoryLoading = false;
   }
 }
 
@@ -197,6 +206,8 @@ async function handleHistoryRequest(queryText, classification) {
  * @param {string} queryText - Search query
  */
 async function handleBookmarksRequest(queryText) {
+  if (isBookmarksLoading) return;
+  isBookmarksLoading = true;
   const loadingMessage = appendMessage(STATUS_MESSAGES.LOADING_BOOKMARKS, 'ai');
 
   try {
@@ -217,6 +228,8 @@ async function handleBookmarksRequest(queryText) {
     } else {
       loadingMessage.textContent = formatErrorForUser(error, ERROR_MESSAGES.ERROR_READING_BOOKMARKS);
     }
+  } finally {
+    isBookmarksLoading = false;
   }
 }
 
@@ -225,6 +238,8 @@ async function handleBookmarksRequest(queryText) {
  * @param {string} queryText - Search query
  */
 async function handleDownloadsRequest(queryText) {
+  if (isDownloadsLoading) return;
+  isDownloadsLoading = true;
   const loadingMessage = appendMessage(STATUS_MESSAGES.LOADING_DOWNLOADS, 'ai');
 
   try {
@@ -245,6 +260,8 @@ async function handleDownloadsRequest(queryText) {
     } else {
       loadingMessage.textContent = formatErrorForUser(error, ERROR_MESSAGES.ERROR_READING_DOWNLOADS);
     }
+  } finally {
+    isDownloadsLoading = false;
   }
 }
 
@@ -303,7 +320,18 @@ async function routeMessage(queryText) {
       try {
         const body = appendMessage('', 'ai');
         body.textContent = 'Analyzing recent history…';
-        const out = await answerWithRetrieval({ adapter: HistoryAdapter, context: { days: 7, text: '' }, query: q, config: { retrieval: { expandSynonyms: true, rerankK: 4 }, reading: { kMax: 3 } } });
+        let stopThink = null;
+        try { const { startThinking } = await import('../ui/ui.js'); stopThink = startThinking(body, 'Thinking'); } catch {}
+
+        isGenerating = true;
+        manualStopFlag = false;
+        currentAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        toggleSendStopButton(true);
+        const inputElH = getInputElement();
+        if (inputElH) inputElH.disabled = true;
+
+        const out = await answerWithRetrieval({ adapter: HistoryAdapter, context: { days: 7, text: '' }, query: q, config: { signal: currentAbortController ? currentAbortController.signal : undefined, retrieval: { expandSynonyms: true, rerankK: 4 }, reading: { kMax: 3 } } });
+        if (stopThink) { try { stopThink(); } catch {} stopThink = null; }
         const parts = [out.text || ''];
         const used = out.usedRefs || [];
         if (used.length) {
@@ -312,7 +340,16 @@ async function routeMessage(queryText) {
         }
         body.innerHTML = renderMarkdown(parts.join('\n'));
       } catch (err) {
-        appendMessage('Could not analyze your history.', 'ai');
+        if (String(err && err.message) !== 'aborted') {
+          appendMessage('Could not analyze your history.', 'ai');
+        }
+      } finally {
+        isGenerating = false;
+        toggleSendStopButton(false);
+        const inputElH2 = getInputElement();
+        if (inputElH2) inputElH2.disabled = false;
+        currentAbortController = null;
+        manualStopFlag = false;
       }
       return;
     }
@@ -331,7 +368,18 @@ async function routeMessage(queryText) {
       try {
         const body = appendMessage('', 'ai');
         body.textContent = 'Analyzing downloads…';
-        const out = await answerWithRetrieval({ adapter: DownloadsAdapter, context: { text: '' }, query: q, config: { retrieval: { expandSynonyms: true, rerankK: 4 }, reading: { kMax: 2, perChunkTokenCap: 800 } } });
+        let stopThink = null;
+        try { const { startThinking } = await import('../ui/ui.js'); stopThink = startThinking(body, 'Thinking'); } catch {}
+
+        isGenerating = true;
+        manualStopFlag = false;
+        currentAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        toggleSendStopButton(true);
+        const inputElD = getInputElement();
+        if (inputElD) inputElD.disabled = true;
+
+        const out = await answerWithRetrieval({ adapter: DownloadsAdapter, context: { text: '' }, query: q, config: { signal: currentAbortController ? currentAbortController.signal : undefined, retrieval: { expandSynonyms: true, rerankK: 4 }, reading: { kMax: 2, perChunkTokenCap: 800 } } });
+        if (stopThink) { try { stopThink(); } catch {} stopThink = null; }
         const parts = [out.text || ''];
         const used = out.usedRefs || [];
         if (used.length) {
@@ -340,7 +388,16 @@ async function routeMessage(queryText) {
         }
         body.innerHTML = renderMarkdown(parts.join('\n'));
       } catch (err) {
-        appendMessage('Could not analyze your downloads.', 'ai');
+        if (String(err && err.message) !== 'aborted') {
+          appendMessage('Could not analyze your downloads.', 'ai');
+        }
+      } finally {
+        isGenerating = false;
+        toggleSendStopButton(false);
+        const inputElD2 = getInputElement();
+        if (inputElD2) inputElD2.disabled = false;
+        currentAbortController = null;
+        manualStopFlag = false;
       }
       return;
     }
@@ -452,20 +509,44 @@ async function sendMessage() {
             await handlePageRequest(finalPrompt);
           }
         } else {
-          // Phase 3: retrieve + progressive read + synthesize answer with sources (interactive)
+          // Phase 3: retrieve + progressive read + synthesize answer with sources (interactive) with cancel support
+          let stopThink = null;
           try {
             const body = appendMessage('', 'ai');
             body.textContent = 'Analyzing and answering from page sections…';
-            let stopThink = null;
             try { const { startThinking } = await import('../ui/ui.js'); stopThink = startThinking(body, 'Thinking'); } catch {}
             const ctx = { url: pageState.url || '' };
+
+            // Reuse global send/stop controls
+            isGenerating = true;
+            manualStopFlag = false;
+            currentAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            toggleSendStopButton(true);
+            const inputElement2 = getInputElement();
+            if (inputElement2) inputElement2.disabled = true;
+
             const run = async (kMax) => {
-              const out = await answerWithRetrieval({ adapter: PageAdapter, context: ctx, query: userInput, config: { retrieval: { topM: 12, rerankK: 4, useLLM: false, expandSynonyms: true }, reading: { kMax: kMax, perChunkTokenCap: 1400, reserveAnswerTokens: 800 } } });
+              if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
+                throw new Error('aborted');
+              }
+              const out = await answerWithRetrieval({ adapter: PageAdapter, context: ctx, query: userInput, config: { signal: currentAbortController ? currentAbortController.signal : undefined, retrieval: { topM: 12, rerankK: 4, useLLM: false, expandSynonyms: true }, reading: { kMax: kMax, perChunkTokenCap: 1400, reserveAnswerTokens: 800 } } });
               if (stopThink) { try { stopThink(); } catch {} stopThink = null; }
+              if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
+                throw new Error('aborted');
+              }
               await renderAnswerWithSources(body, out, PageAdapter, ctx);
               return out;
             };
-            const first = await run(3);
+            let first;
+            try {
+              first = await run(3);
+            } catch (e) {
+              if (String(e && e.message) === 'aborted') {
+                body.textContent = 'Stopped.';
+                return;
+              }
+              throw e;
+            }
             // Add thorough mode button when confidence low/medium
             try {
               if (first && first.confidence !== 'high') {
@@ -474,13 +555,27 @@ async function sendMessage() {
                 const btn = document.createElement('button');
                 btn.className = 'send-btn';
                 btn.textContent = 'Thorough mode (+1 section)';
-                btn.addEventListener('click', async () => { btn.disabled = true; await run(4); btn.disabled = false; });
+                btn.addEventListener('click', async () => { 
+                  btn.disabled = true; 
+                  try { await run(4); } catch (e) { /* ignore if aborted */ } 
+                  btn.disabled = false; 
+                });
                 actions.appendChild(btn);
                 body.appendChild(actions);
               }
             } catch {}
           } catch (err) {
-            appendMessage('Could not produce an answer from the page sections.', 'ai');
+            if (String(err && err.message) !== 'aborted') {
+              appendMessage('Could not produce an answer from the page sections.', 'ai');
+            }
+          } finally {
+            isGenerating = false;
+            toggleSendStopButton(false);
+            const inputElement3 = getInputElement();
+            if (inputElement3) inputElement3.disabled = false;
+            currentAbortController = null;
+            manualStopFlag = false;
+            if (stopThink) { try { stopThink(); } catch {} }
           }
         }
       } else if (tool === TOOLS.CHROMEPAD) {
@@ -488,13 +583,25 @@ async function sendMessage() {
         if (!qTrim) {
           await handleChromePadSelected();
         } else {
+          let stopThink = null;
           try {
             const body = appendMessage('', 'ai');
             body.textContent = 'Analyzing and answering from your notes…';
-            let stopThink = null;
             try { const { startThinking } = await import('../ui/ui.js'); stopThink = startThinking(body, 'Thinking'); } catch {}
+
+            // Reuse global send/stop controls
+            isGenerating = true;
+            manualStopFlag = false;
+            currentAbortController = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            toggleSendStopButton(true);
+            const inputElement4 = getInputElement();
+            if (inputElement4) inputElement4.disabled = true;
+
             const run = async (kMax) => {
-              const out = await answerWithRetrieval({ adapter: ChromePadAdapter, context: {}, query: qTrim, config: { retrieval: { topM: 12, rerankK: 4, useLLM: false, expandSynonyms: true }, reading: { kMax: kMax, perChunkTokenCap: 1200, reserveAnswerTokens: 800 } } });
+              if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
+                throw new Error('aborted');
+              }
+              const out = await answerWithRetrieval({ adapter: ChromePadAdapter, context: {}, query: qTrim, config: { signal: currentAbortController ? currentAbortController.signal : undefined, retrieval: { topM: 12, rerankK: 4, useLLM: false, expandSynonyms: true }, reading: { kMax: kMax, perChunkTokenCap: 1200, reserveAnswerTokens: 800 } } });
               // Map docId → note title for clickable sources
               let titleMap = new Map();
               try {
@@ -502,22 +609,45 @@ async function sendMessage() {
                 titleMap = new Map(docs.map(d => [String(d.id), d.title || 'Untitled']));
               } catch {}
               if (stopThink) { try { stopThink(); } catch {} stopThink = null; }
+              if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
+                throw new Error('aborted');
+              }
               await renderAnswerWithSources(body, out, ChromePadAdapter, {}, titleMap);
               return out;
             };
-            const firstN = await run(3);
+
+            let firstN;
+            try {
+              firstN = await run(3);
+            } catch (e) {
+              if (String(e && e.message) === 'aborted') {
+                body.textContent = 'Stopped.';
+                return;
+              }
+              throw e;
+            }
             if (firstN && firstN.confidence !== 'high') {
               const actions = document.createElement('div');
               actions.style.marginTop = '8px';
               const btn = document.createElement('button');
               btn.className = 'send-btn';
               btn.textContent = 'Thorough mode (+1 section)';
-              btn.addEventListener('click', async () => { btn.disabled = true; await run(4); btn.disabled = false; });
+              btn.addEventListener('click', async () => { btn.disabled = true; try { await run(4); } catch (e) {} btn.disabled = false; });
               actions.appendChild(btn);
               body.appendChild(actions);
             }
           } catch (err) {
-            appendMessage('Could not produce an answer from your notes.', 'ai');
+            if (String(err && err.message) !== 'aborted') {
+              appendMessage('Could not produce an answer from your notes.', 'ai');
+            }
+          } finally {
+            isGenerating = false;
+            toggleSendStopButton(false);
+            const inputElement5 = getInputElement();
+            if (inputElement5) inputElement5.disabled = false;
+            currentAbortController = null;
+            manualStopFlag = false;
+            if (stopThink) { try { stopThink(); } catch {} }
           }
         }
       } else {
