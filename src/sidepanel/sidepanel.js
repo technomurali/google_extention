@@ -211,17 +211,33 @@ async function handleBookmarksRequest(queryText) {
   const loadingMessage = appendMessage(STATUS_MESSAGES.LOADING_BOOKMARKS, 'ai');
 
   try {
-    const bookmarks = await searchBookmarks(queryText);
+    const raw = String(queryText || '');
+    const sanitizedQuery = raw.replace(/^User:\s*/i, '').trim();
+    log.info(`Handling bookmarks request with query: "${raw}" (sanitized: "${sanitizedQuery}")`);
+    const bookmarks = await searchBookmarks(sanitizedQuery);
+
+    log.info(`Received ${bookmarks.length} bookmarks from search`);
 
     if (bookmarks.length === 0) {
-      loadingMessage.textContent = ERROR_MESSAGES.NO_BOOKMARKS_FOUND;
+      const trimmedQuery = sanitizedQuery;
+      if (trimmedQuery) {
+        loadingMessage.textContent = `No bookmarks found matching "${trimmedQuery}".`;
+      } else {
+        loadingMessage.textContent = ERROR_MESSAGES.NO_BOOKMARKS_FOUND + ' Make sure you have granted bookmarks permission.';
+      }
       return;
     }
 
     const results = convertBookmarksToResults(bookmarks);
+    log.info(`Rendering ${results.length} bookmark results`);
     renderResults(results, loadingMessage);
   } catch (error) {
     log.error('Bookmarks request failed:', error);
+    log.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      queryText: queryText
+    });
 
     if (error instanceof PermissionError) {
       loadingMessage.textContent = error.message;
@@ -651,7 +667,8 @@ async function sendMessage() {
           }
         }
       } else {
-        await routeMessage(finalPrompt);
+        // For non-chat tools, pass raw user input (not the labeled finalPrompt)
+        await routeMessage(userInput);
       }
     } catch (error) {
       log.error('Message routing error:', error);

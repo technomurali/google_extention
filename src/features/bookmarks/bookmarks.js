@@ -83,12 +83,21 @@ export async function getAllBookmarks() {
 export async function searchBookmarks(queryText) {
   const allBookmarks = await getAllBookmarks();
 
+  // Handle empty, null, undefined, or whitespace-only queries - return all bookmarks
   if (!queryText || typeof queryText !== 'string') {
-    // Return all bookmarks (limited)
+    log.info(`Returning all bookmarks (no query): ${allBookmarks.length} total`);
     return allBookmarks.slice(0, UI.MAX_BOOKMARKS_DISPLAY);
   }
 
-  const lowerQuery = queryText.toLowerCase().trim();
+  const trimmedQuery = queryText.trim();
+  
+  // If query becomes empty after trimming whitespace, return all bookmarks
+  if (!trimmedQuery) {
+    log.info(`Returning all bookmarks (empty after trim): ${allBookmarks.length} total`);
+    return allBookmarks.slice(0, UI.MAX_BOOKMARKS_DISPLAY);
+  }
+
+  const lowerQuery = trimmedQuery.toLowerCase();
 
   const filtered = allBookmarks.filter((bookmark) => {
     const titleMatch = (bookmark.title || '').toLowerCase().includes(lowerQuery);
@@ -96,7 +105,7 @@ export async function searchBookmarks(queryText) {
     return titleMatch || urlMatch;
   });
 
-  log.info(`Filtered to ${filtered.length} bookmarks matching "${queryText}"`);
+  log.info(`Filtered to ${filtered.length} bookmarks matching "${trimmedQuery}" out of ${allBookmarks.length} total`);
   return filtered.slice(0, UI.MAX_BOOKMARKS_DISPLAY);
 }
 
