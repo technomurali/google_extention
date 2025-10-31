@@ -753,6 +753,52 @@ async function sendMessage() {
   if (inputElement) inputElement.disabled = true;
 
   try {
+    // Multi-chunk context flow (if enabled and contexts present)
+    try {
+      const cfgCtx3 = window.CONFIG?.contextSelection || {};
+      const enableMulti = cfgCtx3 && cfgCtx3.enableMultiChunkProcessing !== false;
+      const ctxsRaw = getSelectedContexts(); // use trimmed per-chunk contexts
+      if (enableMulti && Array.isArray(ctxsRaw) && ctxsRaw.length > 0) {
+        let localStop = null;
+        let startThinkingRef = null;
+        try { const mod = await import('../ui/ui.js'); startThinkingRef = mod.startThinking; } catch {}
+        const { processMultiContexts } = await import('../services/multi_chunk_processor.js');
+        const onProgress = (info) => {
+          try {
+            if (!cfgCtx3.showChunkProgress) return;
+            if (info.phase === 'processing') {
+              const idx = String(info.current);
+              const tot = String(info.total);
+              const label = `Thinking ${idx}/${tot}`;
+              if (!localStop && startThinkingRef) {
+                try { localStop = startThinkingRef(aiMessageElement, label); } catch {}
+              } else if (localStop && typeof localStop.updateLabel === 'function') {
+                try { localStop.updateLabel(label); } catch {}
+              }
+            } else if (info.phase === 'synthesizing') {
+              const synthLabel = 'Thinking (synthesizing)';
+              if (!localStop && startThinkingRef) {
+                try { localStop = startThinkingRef(aiMessageElement, synthLabel); } catch {}
+              } else if (localStop && typeof localStop.updateLabel === 'function') {
+                try { localStop.updateLabel(synthLabel); } catch {}
+              }
+            }
+          } catch {}
+        };
+        const options = currentAbortController ? { signal: currentAbortController.signal } : {};
+        const result = await processMultiContexts({ contexts: ctxsRaw, query: userInput, config: cfgCtx3, signal: options.signal, onProgress });
+        if (localStop) { try { localStop(); } catch {} localStop = null; }
+        const unwrappedMC = unwrapFullCodeFence(result && result.answer ? result.answer : '');
+        aiMessageElement.innerHTML = renderMarkdown(unwrappedMC);
+        try { const bubble = aiMessageElement.closest('.msg'); if (bubble) bubble.dataset.rawMarkdown = unwrappedMC; } catch {}
+        try { const { addAskThisResultButton } = await import('../ui/ui.js'); addAskThisResultButton(aiMessageElement); } catch {}
+        return; // Done via multi-chunk path
+      }
+    } catch (mcErr) {
+      // Fall through to normal streaming path on any error
+      console.warn('Multi-chunk path failed; falling back to streaming:', mcErr);
+    }
+
     const options = currentAbortController ? { signal: currentAbortController.signal } : {};
     // Regular chat streaming path
     try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}

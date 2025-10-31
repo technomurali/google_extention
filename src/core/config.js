@@ -244,13 +244,23 @@ const CONFIG = {
   // Controls selection-to-context behavior and UI labels
   // ============================================
   contextSelection: {
-    maxItems: 5,                 // Maximum number of context snippets allowed
+    maxItems: 5,                 // Maximum number of context snippets allowed (legacy limit; ignored if unlimitedChunks is true)
     buttonLabel: 'Ask iChrome',  // Floating button label shown on selection
     pillClearAllLabel: 'Clear all',
     pillCounterTemplate: '{count}/{max}', // e.g., 2/5
     contextLabelPrefix: 'Context', // Used as: Context 1:, Context 2:
     selectionHighlight: true,     // Highlight selected text in source bubble
-    maxSnippetChars: 4000,         // Soft cap for snippet length included in prompt
+    maxSnippetChars: 4000,         // Per-chunk soft cap for snippet length
+    // Multi-chunk processing (Ask iChrome)
+    enableMultiChunkProcessing: true,  // If true, large selections are split and analyzed per-chunk
+    chunkOverlapChars: 200,            // Overlap between consecutive chunks for continuity
+    unlimitedChunks: true,             // If true, remove 5-item cap and allow unlimited chunks
+    showChunkProgress: true,           // Show progress like "Processing chunk 2/10..."
+    synthesizeStrategy: 'llm',         // 'llm' | 'concatenate' fallback strategy
+    // UI labels for multi-chunk flow
+    chunkLabelTemplate: 'Chunk {index}/{total} ({size})',
+    processingChunkTemplate: 'Processing chunk {index}/{total}...',
+    synthesizingLabel: 'Synthesizing final answer...',
     pillTruncateChars: 15,        // Characters shown on pill label
   },
 

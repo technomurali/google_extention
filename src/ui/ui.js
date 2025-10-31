@@ -241,6 +241,11 @@ function getConfigContext() {
     contextLabelPrefix: String(cfg.contextLabelPrefix || 'Context'),
     selectionHighlight: Boolean(cfg.selectionHighlight !== false),
     maxSnippetChars: Number(cfg.maxSnippetChars) || 800,
+    // Multi-chunk settings
+    enableMultiChunkProcessing: Boolean(cfg.enableMultiChunkProcessing !== false),
+    unlimitedChunks: Boolean(cfg.unlimitedChunks === true),
+    chunkOverlapChars: Number(cfg.chunkOverlapChars) || 200,
+    chunkLabelTemplate: String(cfg.chunkLabelTemplate || 'Chunk {index}/{total} ({size})'),
     pillTruncateChars: Number(cfg.pillTruncateChars) || 30,
   };
 }
@@ -266,13 +271,15 @@ function showCtxAddButtonNearSelection() {
   const body = (container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement)?.closest(`.${SELECTORS.CLASS_MSG}.${SELECTORS.CLASS_AI} .msg-body`);
   if (!body) { hideCtxAddButton(); return; }
 
-  const maxReached = selectedContexts.length >= getConfigContext().maxItems;
+  const cfg = getConfigContext();
+  const maxReached = !cfg.unlimitedChunks && (selectedContexts.length >= cfg.maxItems);
   const rect = range.getBoundingClientRect();
   const hostRect = elements.content.getBoundingClientRect();
   const btn = ensureCtxAddButton();
-  btn.textContent = getConfigContext().buttonLabel;
+  btn.textContent = cfg.buttonLabel;
   btn.disabled = maxReached;
-  btn.title = maxReached ? `${getConfigContext().pillCounterTemplate.replace('{count}', String(selectedContexts.length)).replace('{max}', String(getConfigContext().maxItems))}` : getConfigContext().buttonLabel;
+  const maxLabel = cfg.unlimitedChunks ? '∞' : String(cfg.maxItems);
+  btn.title = maxReached ? `${cfg.pillCounterTemplate.replace('{count}', String(selectedContexts.length)).replace('{max}', maxLabel)}` : cfg.buttonLabel;
 
   // Position button slightly above selection
   const top = rect.top - hostRect.top - 30 + elements.content.scrollTop;
@@ -282,9 +289,9 @@ function showCtxAddButtonNearSelection() {
   btn.style.display = 'inline-flex';
 
   // Click handler
-  const handleClick = (e) => {
+  const handleClick = async (e) => {
     e.preventDefault();
-    tryAddCurrentSelectionToContext();
+    try { await tryAddCurrentSelectionToContext(); } catch {}
   };
   btn.onclick = handleClick;
 }
@@ -293,7 +300,7 @@ function hideCtxAddButton() {
   if (ctxAddBtnEl) ctxAddBtnEl.style.display = 'none';
 }
 
-function tryAddCurrentSelectionToContext() {
+async function tryAddCurrentSelectionToContext() {
   const cfg = getConfigContext();
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed) return;
@@ -308,7 +315,7 @@ function tryAddCurrentSelectionToContext() {
   const text = String(sel.toString() || '').trim();
   if (!text) return;
 
-  if (selectedContexts.length >= cfg.maxItems) return;
+  if (!cfg.unlimitedChunks && selectedContexts.length >= cfg.maxItems) return;
 
   // Avoid duplicates by exact text match within same bubble
   const bubbleEl = body.closest(`.${SELECTORS.CLASS_MSG}.${SELECTORS.CLASS_AI}`);
@@ -332,13 +339,46 @@ function tryAddCurrentSelectionToContext() {
     }
   }
 
-  const ctx = {
-    id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    text,
-    bubbleId,
-    highlightEl: highlightSpan,
-  };
-  selectedContexts.push(ctx);
+  // Multi-chunk: split and add each chunk as a separate context pill
+  if (cfg.enableMultiChunkProcessing && text.length > cfg.maxSnippetChars) {
+    try {
+      const { chunkText } = await import('../core/utils.js');
+      const chunks = chunkText(text, { maxChunkChars: cfg.maxSnippetChars, overlapChars: cfg.chunkOverlapChars });
+      const total = chunks.length;
+      const nowBase = Date.now();
+      chunks.forEach((ch, i) => {
+        // Respect legacy max only if not unlimited
+        if (!cfg.unlimitedChunks && selectedContexts.length >= cfg.maxItems) return;
+        const label = cfg.chunkLabelTemplate
+          .replace('{index}', String(ch.index))
+          .replace('{total}', String(total))
+          .replace('{size}', `${ch.size.toLocaleString()} chars`);
+        selectedContexts.push({
+          id: `ctx-${nowBase}-${i}-${Math.random().toString(36).slice(2, 5)}`,
+          text: ch.content,
+          label,
+          bubbleId,
+          highlightEl: i === 0 ? highlightSpan : null,
+        });
+      });
+    } catch {
+      // Fallback: add as a single (trimmed) context
+      selectedContexts.push({
+        id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        text,
+        bubbleId,
+        highlightEl: highlightSpan,
+      });
+    }
+  } else {
+    const ctx = {
+      id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text,
+      bubbleId,
+      highlightEl: highlightSpan,
+    };
+    selectedContexts.push(ctx);
+  }
   updateContextPillsUI();
   try {
     const ev = new CustomEvent('ctx-pill-added', { bubbles: true, composed: true, detail: { count: selectedContexts.length } });
@@ -360,28 +400,57 @@ function tryAddCurrentSelectionToContext() {
  * @param {string} text - Context text snippet/content
  * @param {string} [label] - Optional label to display on pill
  */
-export function addExternalContext(text, label, data) {
+export async function addExternalContext(text, label, data) {
   const cfg = getConfigContext();
   if (!text) return;
-  if (selectedContexts.length >= cfg.maxItems) return;
+  if (!cfg.unlimitedChunks && selectedContexts.length >= cfg.maxItems) return;
 
-  const ctx = {
-    id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    text: String(text),
-    bubbleId: 'external',
-    highlightEl: null,
-    label: label ? String(label) : undefined,
-    data: data !== undefined ? data : undefined,
-  };
-  // Debug: Log ctx.text data
-  console.log('[Context Pill] Added context:', {
-    label: ctx.label,
-    textLength: ctx.text.length,
-    textPreview: ctx.text.slice(0, 100) + (ctx.text.length > 100 ? '...' : ''),
-    fullText: ctx.text,
-    dataItems: ctx.data?.items?.length || 0
-  });
-  selectedContexts.push(ctx);
+  const fullText = String(text);
+
+  // Multi-chunk: split external text into multiple pills if enabled and large
+  if (cfg.enableMultiChunkProcessing && fullText.length > cfg.maxSnippetChars) {
+    try {
+      const { chunkText } = await import('../core/utils.js');
+      const chunks = chunkText(fullText, { maxChunkChars: cfg.maxSnippetChars, overlapChars: cfg.chunkOverlapChars });
+      const total = chunks.length;
+      const base = Date.now();
+      chunks.forEach((ch, i) => {
+        if (!cfg.unlimitedChunks && selectedContexts.length >= cfg.maxItems) return;
+        const chunkLabel = cfg.chunkLabelTemplate
+          .replace('{index}', String(ch.index))
+          .replace('{total}', String(total))
+          .replace('{size}', `${ch.size.toLocaleString()} chars`);
+        selectedContexts.push({
+          id: `ctx-${base}-${i}-${Math.random().toString(36).slice(2, 5)}`,
+          text: ch.content,
+          bubbleId: 'external',
+          highlightEl: null,
+          label: label ? `${label}: ${chunkLabel}` : chunkLabel,
+          data: data !== undefined ? data : undefined,
+        });
+      });
+    } catch {
+      // Fallback to single-pill add when chunking fails
+      selectedContexts.push({
+        id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        text: fullText,
+        bubbleId: 'external',
+        highlightEl: null,
+        label: label ? String(label) : undefined,
+        data: data !== undefined ? data : undefined,
+      });
+    }
+  } else {
+    const ctx = {
+      id: `ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text: fullText,
+      bubbleId: 'external',
+      highlightEl: null,
+      label: label ? String(label) : undefined,
+      data: data !== undefined ? data : undefined,
+    };
+    selectedContexts.push(ctx);
+  }
   updateContextPillsUI();
   try {
     const ev = new CustomEvent('ctx-pill-added', { bubbles: true, composed: true, detail: { count: selectedContexts.length } });
@@ -448,7 +517,7 @@ function updateContextPillsUI() {
   actionsNew.className = 'actions';
   const countText = cfg.pillCounterTemplate
     .replace('{count}', String(selectedContexts.length))
-    .replace('{max}', String(cfg.maxItems));
+    .replace('{max}', cfg.unlimitedChunks ? '∞' : String(cfg.maxItems));
 
   const counterSpan = document.createElement('span');
   counterSpan.className = 'counter';
@@ -2110,7 +2179,7 @@ export function addAskThisResultButton(body) {
         const label = '🧠 This result';
         const raw = String(bubble.dataset.rawMarkdown || body.textContent || '').trim();
         if (!raw) return;
-        addExternalContext(raw.slice(0, 2000), label);
+        addExternalContext(raw, label);
         try { setSelectedTool(TOOLS.CHAT); } catch {}
       } catch {}
     });
@@ -2129,24 +2198,33 @@ export function addAskThisResultButton(body) {
 export function startThinking(body, label = 'Thinking…') {
   let timer = null;
   let alive = true;
+  let baseLabel = String(label || 'Thinking…');
   const holder = document.createElement('div');
   holder.style.opacity = '0.7';
   holder.style.fontSize = '12px';
   const span = document.createElement('span');
-  span.textContent = label;
+  span.textContent = baseLabel;
   holder.appendChild(span);
   body.appendChild(holder);
   let dots = 0;
   timer = setInterval(() => {
     if (!alive) return;
     dots = (dots + 1) % 4;
-    span.textContent = label + (dots ? '.'.repeat(dots) : '');
+    span.textContent = baseLabel + (dots ? '.'.repeat(dots) : '');
   }, 400);
-  return () => {
+  const stop = () => {
     alive = false;
     try { if (timer) clearInterval(timer); } catch {}
     try { if (holder && holder.parentElement) holder.parentElement.removeChild(holder); } catch {}
   };
+  // Allow dynamic label updates without recreating the animation
+  stop.updateLabel = (newLabel) => {
+    try {
+      baseLabel = String(newLabel || '');
+      span.textContent = baseLabel + (dots ? '.'.repeat(dots) : '');
+    } catch {}
+  };
+  return stop;
 }
 
 /**

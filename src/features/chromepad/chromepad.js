@@ -1267,7 +1267,7 @@ export async function renderNotesListBubble() {
         e.stopPropagation();
         const label = `📄 ${n.name || 'Untitled'}`;
         const text = (n.content || '').trim();
-        if (text) addExternalContext(text.slice(0, 2000), label);
+        if (text) addExternalContext(text, label);
       });
 
       actions.appendChild(askBtn);
@@ -1613,7 +1613,7 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
     const label = `📄 ${nameInput.value || 'Untitled'}`;
     const text = (contentArea.value || '').trim();
     if (text) {
-      addExternalContext(text.slice(0, 2000), label);
+      addExternalContext(text, label);
     }
   });
 
@@ -2369,7 +2369,7 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
         const text = String(cpLastSelectionText || '').trim();
         if (!text) { hideCpCtxBtn(); return; }
         const label = `📝 ${nameInput.value || 'Untitled'}`;
-        addExternalContext(text.slice(0, 2000), label);
+        addExternalContext(text, label);
         // Collapse textarea selection BEFORE focusing to avoid re-triggering select listener
         try {
           const endPos = (contentArea.value || '').length;

@@ -245,6 +245,73 @@ export async function retry(fn, maxRetries = 3, baseDelay = 100) {
   throw lastError;
 }
 
+/**
+ * Splits large text into chunks with optional overlap, attempting to break at
+ * paragraph, sentence, or word boundaries for better readability.
+ *
+ * @param {string} text - Text to split into chunks
+ * @param {Object} options - Chunking options
+ * @param {number} options.maxChunkChars - Target maximum characters per chunk
+ * @param {number} options.overlapChars - Overlap characters between chunks
+ * @param {number} options.minChunkChars - Minimum size before considering a boundary
+ * @returns {Array<{ id: string, index: number, content: string, size: number }>} chunks
+ */
+export function chunkText(text, options = {}) {
+  const src = String(text || '');
+  const maxChunkChars = Number(options.maxChunkChars) || 4000;
+  const overlapChars = Math.max(0, Number(options.overlapChars) || 0);
+  const minChunkChars = Math.max(0, Number(options.minChunkChars) || Math.min(500, Math.floor(maxChunkChars / 8)));
+
+  if (src.length <= maxChunkChars) {
+    return [{ id: 'chunk-0', index: 1, content: src, size: src.length }];
+  }
+
+  const chunks = [];
+  let currentIndex = 0;
+  let chunkNumber = 1;
+
+  while (currentIndex < src.length) {
+    const hardEnd = Math.min(currentIndex + maxChunkChars, src.length);
+    let end = hardEnd;
+
+    if (hardEnd < src.length) {
+      const windowText = src.substring(currentIndex, hardEnd);
+
+      // Prefer paragraph breaks
+      let candidate = windowText.lastIndexOf('\n\n');
+      if (candidate > minChunkChars) {
+        end = currentIndex + candidate + 2; // include the break
+      } else {
+        // Sentence boundaries
+        const lastPeriod = windowText.lastIndexOf('. ');
+        const lastExclam = windowText.lastIndexOf('! ');
+        const lastQuest = windowText.lastIndexOf('? ');
+        candidate = Math.max(lastPeriod, lastExclam, lastQuest);
+        if (candidate > minChunkChars) {
+          end = currentIndex + candidate + 2;
+        } else {
+          // Word boundary
+          const lastSpace = windowText.lastIndexOf(' ');
+          if (lastSpace > minChunkChars) {
+            end = currentIndex + lastSpace + 1;
+          }
+        }
+      }
+    }
+
+    const content = src.substring(currentIndex, end).trim();
+    chunks.push({ id: `chunk-${chunkNumber - 1}`, index: chunkNumber, content, size: content.length });
+
+    if (end >= src.length) {
+      break;
+    }
+    currentIndex = Math.max(0, end - overlapChars);
+    chunkNumber += 1;
+  }
+
+  return chunks;
+}
+
 // For non-module script compatibility
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -267,6 +334,7 @@ if (typeof module !== 'undefined' && module.exports) {
     safeJsonParse,
     sleep,
     retry,
+    chunkText,
   };
 }
 
