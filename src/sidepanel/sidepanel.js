@@ -72,7 +72,6 @@ import { formatErrorForUser } from '../core/errors.js';
 import { handleChromePadRequest, handleChromePadSelected } from '../features/chromepad/chromepad.js';
 import { renderMarkdown } from '../services/markdown.js';
 import { PageAdapter } from '../services/retrieval/adapters/pageAdapter.js';
-import { ContextPillsAdapter } from '../services/retrieval/adapters/contextPillsAdapter.js';
 import { ChromePadAdapter } from '../services/retrieval/adapters/chromepadAdapter.js';
 import { askWholeCorpus, retrieveRefs, answerWithRetrieval } from '../services/retrieval/engine.js';
 import { HistoryAdapter } from '../services/retrieval/adapters/historyAdapter.js';
@@ -523,9 +522,19 @@ async function sendMessage() {
   const cfg = window.CONFIG?.contextSelection || {};
   const labelPrefix = String(cfg.contextLabelPrefix || 'Context');
   const contexts = getSelectedContexts();
+  // Debug: Log what's being sent to LLM
+  contexts.forEach((c, idx) => {
+    console.log(`[LLM Input] Context ${idx + 1}:`, {
+      label: c.label,
+      textLength: c.text.length,
+      textPreview: c.text.slice(0, 200) + (c.text.length > 200 ? '...' : ''),
+      fullText: c.text
+    });
+  });
   const labeled = contexts.map((c, idx) => `${labelPrefix} ${idx + 1}: "${c.text}"`);
   const header = labeled.length ? labeled.join('\n---\n') + '\n\n' : '';
   const finalPrompt = `${header}User: ${userInput}`;
+  console.log('[LLM Input] Total prompt length:', finalPrompt.length);
 
   // Hide onboarding help after first user message
   hideOnboardingHelp();
@@ -745,109 +754,12 @@ async function sendMessage() {
 
   try {
     const options = currentAbortController ? { signal: currentAbortController.signal } : {};
-    const cfgCtx = window.CONFIG?.contextSelection || {};
-    const pills = getSelectedContexts();
-    const useRetrieval = Array.isArray(pills) && pills.length > 0 && !!cfgCtx.useRetrievalWhenPills;
-    if (useRetrieval) {
-      // Retrieval path for pills with Thorough mode and labeled sources
-      try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}
-      const rawPills = getSelectedContextsRaw();
-      // Safeguard: estimate corpus size and warn if large
-      try {
-        const limits = cfgCtx.limits || {};
-        const warnAt = Number(limits.warnThresholdChars || 200000);
-        let est = 0;
-        for (const p of rawPills) {
-          est += (p.text || '').length;
-          const d = p && p.data;
-          if (d && d.kind === 'list' && Array.isArray(d.items)) {
-            for (const it of d.items) {
-              est += String(it && it.title || '').length + String(it && it.url || '').length + 3;
-              if (est > warnAt * 2) break; // stop early on very large
-            }
-          } else if (d && d.kind === 'notes' && Array.isArray(d.items)) {
-            for (const n of d.items) {
-              est += String(n && n.title || '').length + String(n && n.content || '').length + 3;
-              if (est > warnAt * 2) break;
-            }
-          }
-          if (est > warnAt * 2) break;
-        }
-        if (est > warnAt) {
-          try {
-            updateStatus('Large context detected — indexing may take longer');
-            setTimeout(() => { try { updateStatus(''); } catch {} }, 1800);
-          } catch {}
-        }
-      } catch {}
-
-      const ctx = { pills: rawPills, limits: (cfgCtx && cfgCtx.limits) || {} };
-      const retrievalCfg = {
-        signal: currentAbortController ? currentAbortController.signal : undefined,
-        retrieval: {
-          topM: Number((cfgCtx.retrieval && cfgCtx.retrieval.topM) || 12),
-          rerankK: Number((cfgCtx.retrieval && cfgCtx.retrieval.rerankK) || 4),
-          expandSynonyms: !!(cfgCtx.retrieval && cfgCtx.retrieval.expandSynonyms !== false),
-          useLLM: !!(cfgCtx.retrieval && cfgCtx.retrieval.useLLM !== false),
-        },
-        reading: {
-          kMax: Number((cfgCtx.reading && cfgCtx.reading.kMax) || 3),
-          perChunkTokenCap: Number((cfgCtx.reading && cfgCtx.reading.perChunkTokenCap) || 1200),
-          reserveAnswerTokens: Number((cfgCtx.reading && cfgCtx.reading.reserveAnswerTokens) || 800),
-        }
-      };
-
-      const run = async (kMax) => {
-        if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
-          throw new Error('aborted');
-        }
-        const cfg2 = { ...retrievalCfg, reading: { ...retrievalCfg.reading, kMax } };
-        const out = await answerWithRetrieval({ adapter: ContextPillsAdapter, context: ctx, query: userInput, config: cfg2 });
-        if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
-        if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
-          throw new Error('aborted');
-        }
-        // Build title map (pill label → docId) for Sources labels
-        let titleMap = new Map();
-        try {
-          const docs = await ContextPillsAdapter.listDocuments(ctx);
-          titleMap = new Map(docs.map(d => [String(d.id), d.title || 'Context']));
-        } catch {}
-        await renderAnswerWithSources(aiMessageElement, out, ContextPillsAdapter, ctx, titleMap);
-        return out;
-      };
-
-      try {
-        const first = await run(Number((cfgCtx.reading && cfgCtx.reading.kMax) || 3));
-        // Add thorough mode button when confidence low/medium
-        try {
-          if (first && first.confidence !== 'high') {
-            const actions = document.createElement('div');
-            actions.style.marginTop = '8px';
-            const btn = document.createElement('button');
-            btn.className = 'send-btn';
-            btn.textContent = 'Thorough mode (+1 section)';
-            btn.addEventListener('click', async () => {
-              btn.disabled = true;
-              try { await run(Number((cfgCtx.reading && cfgCtx.reading.kMax) || 3) + 1); } catch (e) { /* ignore if aborted */ }
-              btn.disabled = false;
-            });
-            actions.appendChild(btn);
-            aiMessageElement.appendChild(actions);
-          }
-        } catch {}
-      } catch (e) {
-        if (String(e && e.message) !== 'aborted') {
-          aiMessageElement.textContent = 'Could not produce an answer from the selected contexts.';
-        }
-      }
-    } else {
-      // Regular chat streaming path
-      try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}
-      const stream = await sendStreamingPrompt(finalPrompt, options);
-      let buffer = '';
-      let lastRender = 0;
-      for await (const chunk of stream) {
+    // Regular chat streaming path
+    try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}
+    const stream = await sendStreamingPrompt(finalPrompt, options);
+    let buffer = '';
+    let lastRender = 0;
+    for await (const chunk of stream) {
         if (manualStopFlag) break;
         buffer += chunk;
         if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
@@ -866,7 +778,6 @@ async function sendMessage() {
         if (bubble) bubble.dataset.rawMarkdown = unwrapped;
       } catch {}
       try { const { addAskThisResultButton } = await import('../ui/ui.js'); addAskThisResultButton(aiMessageElement); } catch {}
-    }
   } catch (streamError) {
     const aborted = (currentAbortController && currentAbortController.signal && currentAbortController.signal.aborted) || manualStopFlag;
     if (!aborted) {
@@ -1144,14 +1055,6 @@ function bindEventListeners() {
           } else {
             updateStatus(`Indexing page… ${pct}%`);
           }
-        } else if (key.startsWith('ctx:')) {
-          if (detail.phase === 'done') {
-            updateStatus('Contexts indexed');
-            if (lastProgressTimer) clearTimeout(lastProgressTimer);
-            lastProgressTimer = setTimeout(() => { try { updateStatus(''); } catch {} }, 1200);
-          } else {
-            updateStatus(`Indexing contexts… ${pct}%`);
-          }
         } else {
           // Ignore other indexes
         }
@@ -1159,26 +1062,6 @@ function bindEventListeners() {
     });
   } catch {}
 
-  // Pre-index pills corpus in background when the first pill is added
-  try {
-    const cfgCtx = window.CONFIG?.contextSelection || {};
-    let preindexTimer = null;
-    document.addEventListener('ctx-pill-added', () => {
-      try {
-        if (!cfgCtx.preindexOnPillAdd) return;
-        if (preindexTimer) { clearTimeout(preindexTimer); preindexTimer = null; }
-        preindexTimer = setTimeout(async () => {
-          try {
-            const pillsRaw = getSelectedContextsRaw();
-            if (!Array.isArray(pillsRaw) || pillsRaw.length === 0) return;
-            const ctx = { pills: pillsRaw };
-            // Fire-and-forget; engine has caching + dedupe
-            askWholeCorpus({ adapter: ContextPillsAdapter, context: ctx, config: { debug: false } }).catch(() => {});
-          } catch {}
-        }, 200);
-      } catch {}
-    });
-  } catch {}
 
   // Start @Page capture immediately when selected (Option A)
   document.addEventListener('tool-selected', (ev) => {

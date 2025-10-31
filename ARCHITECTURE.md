@@ -202,7 +202,6 @@ src/services/
     ├── types.js               # Type definitions
     ├── adapters/              # Data source adapters
     │   ├── chromePadAdapter.js
-    │   ├── contextPillsAdapter.js
     │   ├── downloadsAdapter.js
     │   ├── historyAdapter.js
     │   └── pageAdapter.js

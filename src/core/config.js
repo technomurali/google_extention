@@ -250,30 +250,8 @@ const CONFIG = {
     pillCounterTemplate: '{count}/{max}', // e.g., 2/5
     contextLabelPrefix: 'Context', // Used as: Context 1:, Context 2:
     selectionHighlight: true,     // Highlight selected text in source bubble
-    maxSnippetChars: 800,         // Soft cap for snippet length included in prompt
+    maxSnippetChars: 4000,         // Soft cap for snippet length included in prompt
     pillTruncateChars: 15,        // Characters shown on pill label
-    // Retrieval mode for pills (when tool is @iChromeChat)
-    useRetrievalWhenPills: true,
-    // Build context index in background after first pill is added
-    preindexOnPillAdd: true,
-    // Retrieval defaults (aligned with @Page but slightly smaller)
-    retrieval: {
-      topM: 12,
-      rerankK: 4,
-      expandSynonyms: true,
-      useLLM: true,
-    },
-    reading: {
-      kMax: 3,
-      perChunkTokenCap: 1200,
-      reserveAnswerTokens: 800,
-    },
-    // Safeguards for very large pill corpora
-    limits: {
-      maxTotalChars: 500000,        // Hard cap across all pill documents (~0.5MB)
-      warnThresholdChars: 200000,   // Show status hint when above this size
-      maxDocs: 25,                  // Max documents (pills) to include
-    },
   },
 
   // ============================================

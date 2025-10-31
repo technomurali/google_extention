@@ -373,6 +373,14 @@ export function addExternalContext(text, label, data) {
     label: label ? String(label) : undefined,
     data: data !== undefined ? data : undefined,
   };
+  // Debug: Log ctx.text data
+  console.log('[Context Pill] Added context:', {
+    label: ctx.label,
+    textLength: ctx.text.length,
+    textPreview: ctx.text.slice(0, 100) + (ctx.text.length > 100 ? '...' : ''),
+    fullText: ctx.text,
+    dataItems: ctx.data?.items?.length || 0
+  });
   selectedContexts.push(ctx);
   updateContextPillsUI();
   try {
@@ -406,7 +414,10 @@ function updateContextPillsUI() {
   selectedContexts.forEach((ctx, idx) => {
     const pill = document.createElement('span');
     pill.className = 'pill';
-    pill.title = ctx.label ? `${ctx.label}\n\n${ctx.text}` : ctx.text;
+    // Tooltip with text and character count
+    const charCount = ctx.text ? ctx.text.length : 0;
+    const charCountText = `\n\nCharacters: ${charCount.toLocaleString()}`;
+    pill.title = ctx.label ? `${ctx.label}\n\n${ctx.text}${charCountText}` : `${ctx.text}${charCountText}`;
     pill.dataset.ctxId = ctx.id;
     const display = ctx.label ? ctx.label : ctx.text;
     pill.textContent = truncateForPill(display, cfg.pillTruncateChars);
