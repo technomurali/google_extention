@@ -689,6 +689,15 @@ export async function renderNotesListBubble() {
   // Ensure only one ChromePad bubble exists at any time
   cleanupCurrentBubble();
 
+  // Load tooltip settings
+  let tooltipsEnabled = true;
+  try {
+    const helpSettings = await getSettings('help');
+    tooltipsEnabled = helpSettings && helpSettings.showTooltips !== false;
+  } catch (err) {
+    log.warn('Failed to load tooltip settings, defaulting to enabled:', err);
+  }
+
   const body = appendMessage('', 'ai');
   body.innerHTML = '';
   body.style.padding = '8px';
@@ -858,7 +867,7 @@ export async function renderNotesListBubble() {
       // Create custom styled tooltip (for filename and type)
       let tooltip = null;
       const typeInfo = detectNoteType(n.content);
-      if (n.content) {
+      if (n.content && tooltipsEnabled) {
         const previewText = getPreviewLines(n.content);
         if (previewText) {
           tooltip = document.createElement('div');
@@ -957,7 +966,7 @@ export async function renderNotesListBubble() {
       iconElement.style.fontSize = '16px';
       iconElement.style.lineHeight = '1';
       iconElement.style.flexShrink = '0';
-      iconElement.title = typeInfo.typeLabel;
+      // Removed title attribute to avoid duplicate tooltips (balloon tooltip only)
       
       // Title container with icon
       const titleContainer = document.createElement('div');
@@ -966,7 +975,7 @@ export async function renderNotesListBubble() {
       titleContainer.style.gap = '6px';
       titleContainer.style.flex = '1';
       titleContainer.style.minWidth = '0'; // Allow flex child to shrink
-      titleContainer.title = `${n.name || 'Untitled'} (${typeInfo.typeLabel})`;
+      // Removed title attribute to avoid duplicate tooltips (balloon tooltip only)
 
       const noteTitle = document.createElement('div');
       noteTitle.textContent = n.name || 'Untitled';
@@ -985,7 +994,7 @@ export async function renderNotesListBubble() {
       typeBadge.style.opacity = '0.6';
       typeBadge.style.fontWeight = '500';
       typeBadge.style.flexShrink = '0';
-      typeBadge.title = typeInfo.typeLabel;
+      // Removed title attribute to avoid duplicate tooltips (balloon tooltip only)
 
       titleContainer.appendChild(iconElement);
       titleContainer.appendChild(noteTitle);

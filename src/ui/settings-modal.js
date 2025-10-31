@@ -822,7 +822,7 @@ function renderHelpPanel(container) {
     
     // Show tooltips toggle
     const tooltipsToggle = createToggleGroup(
-      'Show Tooltips on First Use',
+      'Show Tooltips',
       'sp-settings-help-tooltips',
       settings.showTooltips !== false,
       async (val) => await updateSettings('help', { showTooltips: val })

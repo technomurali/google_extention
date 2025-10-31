@@ -151,13 +151,10 @@ const CONFIG = {
   //    - ✅ ON: Welcome message appears with typewriter effect
   //    - ✅ OFF: No welcome message appears on load
   //
-  // 2. SHOW TOOLTIPS ON FIRST USE:
+  // 2. SHOW TOOLTIPS:
   //    - Open Settings → Help section
-  //    - Toggle "Show Tooltips on First Use" ON/OFF
-  //    - Clear browser storage to reset "first use" state:
-  //      - Open Chrome DevTools (F12) → Application tab → Storage → Clear site data
-  //      - Or: chrome.storage.local.clear() in console
-  //    - ✅ ON: Tooltips appear on first interaction with features
+  //    - Toggle "Show Tooltips" ON/OFF
+  //    - ✅ ON: Tooltips show when hovering over ChromePad notes
   //    - ✅ OFF: Tooltips are disabled
   //
   // QUICK TEST STEPS:
@@ -168,12 +165,60 @@ const CONFIG = {
   //    3. Reopen side panel → Should see welcome message
   //    4. Toggle OFF → Reload → Should NOT see welcome message
   //
-  // B. Test "Show Tooltips on First Use":
-  //    1. Settings → Help → Toggle "Show Tooltips on First Use" ON
-  //    2. Clear extension storage (see above)
-  //    3. Interact with features (e.g., hover over ChromePad items)
-  //    4. Verify tooltips appear on first use
-  //    5. Toggle OFF → Verify tooltips don't appear
+  // B. Test "Show Tooltips" - Manual Test Cases:
+  //    ============================================
+  //    1. BASIC TOGGLE TEST:
+  //       - Settings → Help → Toggle "Show Tooltips" ON
+  //       - Open ChromePad (@ChromePad)
+  //       - Hover over any note → Should see preview tooltip with note type and content
+  //       - Toggle OFF → Reload panel → Hover again → Should NOT see tooltip
+  //
+  //    2. EMPTY NOTE TEST:
+  //       - Create a note with NO content
+  //       - Hover over it → Should NOT see tooltip (even when setting is ON)
+  //       - Add content to note → Hover → Should now see tooltip
+  //
+  //    3. LONG CONTENT TEST:
+  //       - Create a note with VERY LONG content (10+ lines)
+  //       - Hover over it → Tooltip should show first 3 lines only
+  //       - Verify tooltip is truncated to ~200 characters
+  //
+  //    4. MARKDOWN CONTENT TEST:
+  //       - Create note with markdown (headers, lists, bold, etc.)
+  //       - Hover → Tooltip should show plain text preview (no markdown)
+  //
+  //    5. MULTIPLE NOTES TEST:
+  //       - Create 5+ notes with different content
+  //       - Hover over each one → Each should show correct preview
+  //       - Verify tooltips don't overlap or interfere with each other
+  //
+  //    6. TOOLTIP PERSISTENCE TEST:
+  //       - Hover over note → Tooltip appears
+  //       - Move mouse INTO the tooltip → Tooltip stays visible
+  //       - Move mouse OUT of tooltip → Tooltip fades away
+  //
+  //    7. QUICK HOVER TEST:
+  //       - Hover over note and quickly move away (< 200ms)
+  //       - Tooltip should still appear and fade out smoothly
+  //
+  //    8. TOOLTIP CLOSE BUTTON:
+  //       - Hover over note → Tooltip appears
+  //       - Click the × button in tooltip → Tooltip immediately closes
+  //
+  //    9. RELOAD PERSISTENCE TEST:
+  //       - Set tooltips to OFF
+  //       - Reload side panel
+  //       - Hover → Still no tooltips
+  //       - Set back to ON
+  //       - Reload again
+  //       - Hover → Tooltips work again
+  //
+  //    10. NATIVE TITLE ATTRIBUTES TEST:
+  //        - Verify native HTML title attributes still work:
+  //          - Hover over "+ New" button → Shows "Create new note"
+  //          - Hover over "Import" button → Shows "Import text or markdown files"
+  //          - Hover over action buttons (Preview, Edit, Delete, etc.) → Show tooltips
+  //        - These native tooltips are NOT affected by the setting
   // ============================================
   onboarding: {
     enabled: true,
