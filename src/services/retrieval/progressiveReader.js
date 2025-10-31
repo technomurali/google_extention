@@ -139,7 +139,18 @@ export async function progressiveRead({ adapter, context, query, index, refIds, 
   if (signal && signal.aborted) {
     throw new Error('aborted');
   }
-  const prompt = buildPrompt(index.meta.title || doc.title || '', index.meta.url || doc.url || '', query, selected);
+  // Resolve doc info for header
+  let docTitle = '';
+  let docUrl = '';
+  try {
+    docTitle = String(index && index.meta && (index.meta.title || '')) || '';
+    docUrl = String(index && index.meta && (index.meta.url || '')) || '';
+    if ((!docTitle || !docUrl) && docs && docs[0]) {
+      docTitle = docTitle || String(docs[0].title || '');
+      docUrl = docUrl || String(docs[0].url || '');
+    }
+  } catch {}
+  const prompt = buildPrompt(docTitle, docUrl, query, selected);
   const answer = await sendPrompt(prompt);
   const confidence = parseConfidence(answer);
   return { text: answer, usedRefs, confidence };

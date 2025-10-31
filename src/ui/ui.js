@@ -340,6 +340,10 @@ function tryAddCurrentSelectionToContext() {
   };
   selectedContexts.push(ctx);
   updateContextPillsUI();
+  try {
+    const ev = new CustomEvent('ctx-pill-added', { bubbles: true, composed: true, detail: { count: selectedContexts.length } });
+    document.dispatchEvent(ev);
+  } catch {}
   hideCtxAddButton();
   sel.removeAllRanges();
 
@@ -356,7 +360,7 @@ function tryAddCurrentSelectionToContext() {
  * @param {string} text - Context text snippet/content
  * @param {string} [label] - Optional label to display on pill
  */
-export function addExternalContext(text, label) {
+export function addExternalContext(text, label, data) {
   const cfg = getConfigContext();
   if (!text) return;
   if (selectedContexts.length >= cfg.maxItems) return;
@@ -367,9 +371,14 @@ export function addExternalContext(text, label) {
     bubbleId: 'external',
     highlightEl: null,
     label: label ? String(label) : undefined,
+    data: data !== undefined ? data : undefined,
   };
   selectedContexts.push(ctx);
   updateContextPillsUI();
+  try {
+    const ev = new CustomEvent('ctx-pill-added', { bubbles: true, composed: true, detail: { count: selectedContexts.length } });
+    document.dispatchEvent(ev);
+  } catch {}
 
   // Always switch to @GeneralChat when a pill is added
   if (previousToolBeforeContext === null && selectedContexts.length === 1) {
@@ -498,6 +507,20 @@ export function getSelectedContexts() {
     label: c.label || undefined,
   }));
   return trimmed;
+}
+
+/**
+ * Returns raw (untruncated) selected contexts for retrieval pipelines.
+ * Warning: may contain large strings; do not render directly to UI.
+ */
+export function getSelectedContextsRaw() {
+  return selectedContexts.map(c => ({
+    id: c.id,
+    bubbleId: c.bubbleId,
+    text: c.text,
+    label: c.label || undefined,
+    data: c.data,
+  }));
 }
 
 export function clearSelectedContextsAfterSend() {
@@ -1423,18 +1446,15 @@ export function renderResults(items, existingElement = null) {
     askAll.addEventListener('click', () => {
       try {
         const label = '📚 Results';
-        // Combine title + URL lines up to ~2000 chars
-        const lines = [];
-        for (const it of items) {
-          const line = `${it.title || ''} — ${it.url || ''}`.trim();
-          if (!line) continue;
-          // Stop if adding would exceed ~2000 chars
-          const next = lines.concat([line]).join('\n');
-          if (next.length > 1900) break;
-          lines.push(line);
-        }
-        const text = lines.join('\n');
-        if (text) addExternalContext(text, label);
+        // Build full, untruncated payload
+        const structured = {
+          kind: 'list',
+          format: 'history',
+          items: items.map((it) => ({ title: it.title || '', url: it.url || '', meta: { lastVisitTime: it.lastVisitTime || 0 } })),
+        };
+        // Small preview text for the pill label body
+        const preview = items.slice(0, 20).map((it) => `${it.title || ''} — ${it.url || ''}`.trim()).join('\n');
+        if (preview) addExternalContext(preview, label, structured);
       } catch {}
     });
     actions.appendChild(askAll);
@@ -2011,6 +2031,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getSendButton,
     showOnboardingHelp,
     hideOnboardingHelp,
+    getSelectedContextsRaw,
   };
 }
 

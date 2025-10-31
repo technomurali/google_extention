@@ -31,6 +31,32 @@ function getIndexKey(context) {
  * @returns {Promise<import('../types.js').Document[]>}
  */
 async function listDocuments(context) {
+  // Prefer cached snapshot provided by caller (avoids re-capturing the page)
+  try {
+    const cached = context && context.cached;
+    if (cached && (Array.isArray(cached.chunks) || typeof cached.text === 'string')) {
+      const chunks = Array.isArray(cached.chunks) ? cached.chunks : [];
+      const text = typeof cached.text === 'string' && cached.text.length ? cached.text : chunks.map((c) => String(c && c.content || '')).join('\n');
+      const headings = Array.isArray(cached.headings) ? cached.headings : chunks.map((c) => String(c && c.heading || ''));
+      const doc = {
+        id: String(cached.url || context && context.url || 'active-page'),
+        title: String(cached.title || 'Untitled Page'),
+        url: String(cached.url || ''),
+        createdAt: Date.now(),
+        language: undefined,
+        headings: headings.filter(Boolean),
+        text: String(text || ''),
+        sizeBytes: (text || '').length,
+        sourceKind: 'page',
+        extra: { timestamp: Date.now(), cachedChunks: chunks }
+      };
+      return [doc];
+    }
+  } catch (err) {
+    log.warn('listDocuments cached path failed, falling back to live capture:', err);
+  }
+
+  // Fallback: live capture of active page
   const payload = await captureActivePage();
   const doc = {
     id: String(payload.url || 'active-page'),
@@ -85,7 +111,24 @@ async function chunkDocument(doc, options = {}) {
     overlapChars: Number(options.overlapChars || 500),
     minChunkChars: Number(options.minChunkChars || 1000),
   };
-  const chunks = chunkContent(payload, cfg);
+  // Fast-path: reuse cached chunks when available on the document
+  let chunks;
+  try {
+    const cached = doc && doc.extra && Array.isArray(doc.extra.cachedChunks) ? doc.extra.cachedChunks : null;
+    if (cached) {
+      chunks = cached.map((c, idx) => ({
+        id: String(c.id || `chunk-${idx + 1}`),
+        index: Number(c.index || idx + 1),
+        heading: String(c.heading || `Section ${idx + 1}`),
+        content: String(c.content || ''),
+        sizeBytes: Number(c.sizeBytes || (c.content ? c.content.length : 0)),
+      }));
+    } else {
+      chunks = chunkContent(payload, cfg);
+    }
+  } catch {
+    chunks = chunkContent(payload, cfg);
+  }
   return chunks.map((c) => ({
     id: String(c.id),
     docId: String(doc.id),

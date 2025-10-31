@@ -15,7 +15,21 @@ const LRU_KEY = 'retrieval:lru';
 const DEFAULTS = {
   maxEntries: 20,
   ttlHours: 24 * 7, // 7 days
+  maxTotalBytes: 4_000_000, // ~4MB safety cap for chrome.storage.local
+  maxEntryBytes: 1_000_000, // ~1MB per index soft cap (advisory)
 };
+
+function measureBytes(obj) {
+  try {
+    // Approximate UTF-8 bytes from JSON string length
+    const s = JSON.stringify(obj) || '';
+    // Roughly estimate bytes: count non-ASCII as 2 bytes, ASCII as 1
+    // For simplicity and speed, use length as a lower-bound approximation
+    return s.length;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * @returns {Promise<Record<string, any>>}
@@ -143,22 +157,84 @@ async function dropFromLRU(key) {
  * @param {{ maxEntries?: number }} cfg
  */
 async function evictIfNeeded(cfg) {
-  const maxEntries = Math.max(1, Number(cfg.maxEntries || DEFAULTS.maxEntries));
-  const map = await readAll();
-  const lru = await readLRU();
-  const keys = Object.keys(map);
-  if (keys.length <= maxEntries) return;
+  const limits = Object.assign({}, DEFAULTS, cfg || {});
+  const maxEntries = Math.max(1, Number(limits.maxEntries));
+  const ttlMs = Math.max(0, Number(limits.ttlHours)) * 3600 * 1000;
+  const maxTotalBytes = Math.max(1, Number(limits.maxTotalBytes));
 
-  // Evict from the tail of LRU
-  const toRemove = Math.max(0, keys.length - maxEntries);
-  const victims = lru.slice().reverse().slice(0, toRemove);
-  for (const k of victims) {
-    if (map[k]) delete map[k];
+  let map = await readAll();
+  let lru = await readLRU();
+
+  // 1) TTL purge
+  try {
+    if (ttlMs > 0) {
+      const now = Date.now();
+      let purged = 0;
+      for (const k of Object.keys(map)) {
+        const e = map[k];
+        const created = e && e.meta && e.meta.createdAt;
+        if (created && now - created > ttlMs) {
+          delete map[k];
+          purged += 1;
+        }
+      }
+      if (purged) {
+        await writeAll(map);
+        lru = lru.filter((k) => !!map[k]);
+        await writeLRU(lru);
+        log.info('IndexStore TTL purged entries:', purged);
+      }
+    }
+  } catch {}
+
+  // 2) Count-based eviction
+  const keys = Object.keys(map);
+  if (keys.length > maxEntries) {
+    const toRemove = Math.max(0, keys.length - maxEntries);
+    const victims = lru.slice().reverse().slice(0, toRemove);
+    for (const k of victims) {
+      if (map[k]) delete map[k];
+    }
+    await writeAll(map);
+    lru = lru.filter((k) => !victims.includes(k));
+    await writeLRU(lru);
+    log.info('IndexStore evicted by count:', victims.length);
   }
-  await writeAll(map);
-  const filtered = lru.filter((k) => !victims.includes(k));
-  await writeLRU(filtered);
-  log.info('IndexStore evicted entries:', victims.length);
+
+  // 3) Size-based eviction (total bytes cap)
+  try {
+    let totalBytes = 0;
+    for (const k of Object.keys(map)) totalBytes += measureBytes(map[k]);
+    if (totalBytes > maxTotalBytes) {
+      const victims = [];
+      // Evict from least-recently-used tail until under cap
+      for (let i = lru.length - 1; i >= 0 && totalBytes > maxTotalBytes; i--) {
+        const k = lru[i];
+        if (!map[k]) continue;
+        totalBytes -= measureBytes(map[k]);
+        delete map[k];
+        victims.push(k);
+      }
+      await writeAll(map);
+      lru = lru.filter((k) => !victims.includes(k));
+      await writeLRU(lru);
+      log.info('IndexStore evicted by size:', victims.length, { totalBytesAfter: totalBytes });
+    }
+  } catch (err) {
+    log.warn('IndexStore size eviction failed (continuing):', err);
+  }
+}
+
+/**
+ * Manual cleanup: TTL purge, remove orphaned LRU items, count+size eviction.
+ * Can be called on startup or periodically.
+ */
+export async function cleanupStore(cfg = {}) {
+  try {
+    await evictIfNeeded(Object.assign({}, DEFAULTS, cfg || {}));
+  } catch (err) {
+    log.warn('cleanupStore failed:', err);
+  }
 }
 
 // CommonJS fallback

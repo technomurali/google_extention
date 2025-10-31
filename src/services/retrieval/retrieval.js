@@ -97,27 +97,68 @@ export function lexicalRetrieve(index, query, cfg = {}) {
 export async function rerankWithLLM(index, query, candidates, cfg = {}) {
   try {
     const k = Math.max(1, Number(cfg.rerankK || 4));
-    // Build prompt with minimal content: id + kind + snippet
-    const lookup = new Map(index.summaries.map((s) => [s.refId, s]));
-    const lines = candidates.map((c, i) => {
-      const sum = lookup.get(c.refId);
-      const kind = sum ? sum.kind : 'unknown';
-      const snippet = sum ? String(sum.text || '').slice(0, 300) : '';
-      return `${i + 1}. ${c.refId} [${kind}] :: ${snippet}`;
-    }).join('\n');
-    const prompt = `You are selecting the most relevant sections to answer the user's question. Return ONLY a JSON array of refIds (strings), length up to ${k}, ordered by priority.\n\nQuestion: ${query}\nCandidates:\n${lines}`;
-    const json = await sendPrompt(prompt);
+    // Lookup maps for richer candidate context
+    const summaryByRefId = new Map(index.summaries.map((s) => [s.refId, s]));
+    const sectionHeadingById = new Map((index.sections || []).map((s) => [s.id, s.heading || '']));
+    const chunkToSectionHeading = new Map();
     try {
-      const arr = JSON.parse(json);
+      for (const s of index.sections || []) {
+        for (const cid of s.chunkIds || []) {
+          if (!chunkToSectionHeading.has(cid)) chunkToSectionHeading.set(cid, s.heading || '');
+        }
+      }
+    } catch {}
+
+    // Build candidate lines with kind, (heading), and snippet
+    const lines = candidates.map((c, i) => {
+      const sum = summaryByRefId.get(c.refId);
+      const kind = sum ? sum.kind : 'unknown';
+      const baseSnippet = sum ? String(sum.text || '').slice(0, 300) : '';
+      let heading = '';
+      if (kind === 'section') heading = sectionHeadingById.get(c.refId) || '';
+      else if (kind === 'chunk') heading = chunkToSectionHeading.get(c.refId) || '';
+      const headLabel = heading ? ` (${heading})` : '';
+      return `${i + 1}. ${c.refId} [${kind}]${headLabel} :: ${baseSnippet}`;
+    }).join('\n');
+
+    // Strong semantic instruction + strict JSON response contract
+    const prompt = [
+      'You are a semantic search expert. Rank the candidate sections by semantic relevance to the user\'s question,',
+      'considering meaning, context, and intent — not just keyword overlap.',
+      'Guidelines:',
+      '- Prefer broader sections over their nested chunks WHEN both appear, unless the chunk is clearly more specific to the question.',
+      '- Only choose from the provided candidates. Do NOT invent new ids.',
+      `- Return ONLY a JSON array of refIds (strings), length up to ${k}, most relevant first. No comments or extra text.`,
+      '',
+      `Question: ${query}`,
+      'Candidates:',
+      lines,
+      '',
+      'JSON array only:'
+    ].join('\n');
+
+    const raw = await sendPrompt(prompt);
+
+    // Be tolerant: extract JSON array if wrapped with extra text
+    let jsonStr = raw;
+    try {
+      const m = String(raw || '').match(/\[\s*"[\s\S]*?\]\s*/);
+      if (m) jsonStr = m[0];
+    } catch {}
+
+    try {
+      const arr = JSON.parse(jsonStr);
       if (Array.isArray(arr)) {
         const filtered = arr.filter((id) => typeof id === 'string');
         return { refIds: filtered.slice(0, k), rationale: '' };
       }
-    } catch {}
+    } catch {
+      // fall through to fallback
+    }
   } catch (err) {
     log.warn('rerankWithLLM failed, using lexical order', err);
   }
-  // Fallback: keep original order by score, limit K
+  // Fallback: keep original lexical order by score, limit K
   const k = Math.max(1, Number(cfg.rerankK || 4));
   return { refIds: candidates.slice(0, k).map((c) => c.refId), rationale: '' };
 }

@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { logger } from '../../core/logger.js';
-import { saveIndex, loadIndex } from './stores/indexStore.js';
+import { saveIndex, loadIndex, cleanupStore } from './stores/indexStore.js';
 import { buildIndexSingleDoc, buildIndexCorpus } from './indexer.js';
 import { emitRetrievalEvent } from './utils/events.js';
 import { classifyQuery, lexicalRetrieve, rerankWithLLM } from './retrieval.js';
@@ -34,6 +34,8 @@ const inflight = new Map(); // key -> Promise<{ index, built }>
 export async function askWholeCorpus({ adapter, context, config, sessionId, onProgress }) {
   const t0 = Date.now();
   const debug = !!(config && config.debug);
+  // Opportunistic cleanup before any heavy work
+  try { await cleanupStore(); } catch {}
   const docs = await adapter.listDocuments(context);
   if (!docs || docs.length === 0) {
     throw new Error('No documents available for indexing');
@@ -169,9 +171,10 @@ export async function retrieveRefs({ adapter, context, query, config }) {
   const tRr0 = performance.now();
   let refIds;
   let rationale = '';
-  if (retrievalCfg.useLLM) {
+  if (retrievalCfg.useLLM && candidates.length > Math.max(1, (retrievalCfg.rerankK || 4))) {
     try {
-      const rr = await rerankWithLLM(index, query, candidates, { rerankK: retrievalCfg.rerankK || 4 });
+      // Use expanded query (with synonyms) to help LLM understand intent semantically
+      const rr = await rerankWithLLM(index, expandedQuery, candidates, { rerankK: retrievalCfg.rerankK || 4 });
       refIds = rr.refIds;
       rationale = rr.rationale || '';
     } catch (err) {

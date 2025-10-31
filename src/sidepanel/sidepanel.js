@@ -54,6 +54,7 @@ import {
   hideOnboardingHelp,
   toggleSendStopButton,
   getSelectedContexts,
+  getSelectedContextsRaw,
   clearSelectedContextsAfterSend,
   // New UI helpers for @Page
   renderChunkSelectionBubble,
@@ -66,6 +67,7 @@ import { formatErrorForUser } from '../core/errors.js';
 import { handleChromePadRequest, handleChromePadSelected } from '../features/chromepad/chromepad.js';
 import { renderMarkdown } from '../services/markdown.js';
 import { PageAdapter } from '../services/retrieval/adapters/pageAdapter.js';
+import { ContextPillsAdapter } from '../services/retrieval/adapters/contextPillsAdapter.js';
 import { ChromePadAdapter } from '../services/retrieval/adapters/chromepadAdapter.js';
 import { askWholeCorpus, retrieveRefs, answerWithRetrieval } from '../services/retrieval/engine.js';
 import { HistoryAdapter } from '../services/retrieval/adapters/historyAdapter.js';
@@ -531,7 +533,15 @@ async function sendMessage() {
             const body = appendMessage('', 'ai');
             body.textContent = 'Analyzing and answering from page sections…';
             try { const { startThinking } = await import('../ui/ui.js'); stopThink = startThinking(body, 'Thinking'); } catch {}
-            const ctx = { url: pageState.url || '' };
+            const ctx = { 
+              url: pageState.url || '',
+              cached: {
+                title: pageState.title || '',
+                url: pageState.url || '',
+                chunks: Array.isArray(pageState.chunks) ? pageState.chunks.map((c) => ({ id: c.id, index: c.index, heading: c.heading, content: c.content, sizeBytes: c.sizeBytes })) : [],
+                headings: Array.isArray(pageState.chunks) ? pageState.chunks.map((c) => c.heading).filter(Boolean) : []
+              }
+            };
 
             // Reuse global send/stop controls
             isGenerating = true;
@@ -701,46 +711,132 @@ async function sendMessage() {
 
   try {
     const options = currentAbortController ? { signal: currentAbortController.signal } : {};
-    // Show thinking indicator until first chunk arrives
-    try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}
-    const stream = await sendStreamingPrompt(finalPrompt, options);
-    let buffer = '';
-    let lastRender = 0;
-    for await (const chunk of stream) {
-      if (manualStopFlag) break;
-      buffer += chunk;
-      if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
-      const now = Date.now();
-      if (now - lastRender > 120) {
-        aiMessageElement.innerHTML = renderMarkdown(unwrapMarkdownFenceProgressive(buffer));
-        lastRender = now;
-        scrollToBottom();
+    const cfgCtx = window.CONFIG?.contextSelection || {};
+    const pills = getSelectedContexts();
+    const useRetrieval = Array.isArray(pills) && pills.length > 0 && !!cfgCtx.useRetrievalWhenPills;
+    if (useRetrieval) {
+      // Retrieval path for pills with Thorough mode and labeled sources
+      try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}
+      const rawPills = getSelectedContextsRaw();
+      // Safeguard: estimate corpus size and warn if large
+      try {
+        const limits = cfgCtx.limits || {};
+        const warnAt = Number(limits.warnThresholdChars || 200000);
+        let est = 0;
+        for (const p of rawPills) {
+          est += (p.text || '').length;
+          const d = p && p.data;
+          if (d && d.kind === 'list' && Array.isArray(d.items)) {
+            for (const it of d.items) {
+              est += String(it && it.title || '').length + String(it && it.url || '').length + 3;
+              if (est > warnAt * 2) break; // stop early on very large
+            }
+          } else if (d && d.kind === 'notes' && Array.isArray(d.items)) {
+            for (const n of d.items) {
+              est += String(n && n.title || '').length + String(n && n.content || '').length + 3;
+              if (est > warnAt * 2) break;
+            }
+          }
+          if (est > warnAt * 2) break;
+        }
+        if (est > warnAt) {
+          try {
+            updateStatus('Large context detected — indexing may take longer');
+            setTimeout(() => { try { updateStatus(''); } catch {} }, 1800);
+          } catch {}
+        }
+      } catch {}
+
+      const ctx = { pills: rawPills, limits: (cfgCtx && cfgCtx.limits) || {} };
+      const retrievalCfg = {
+        signal: currentAbortController ? currentAbortController.signal : undefined,
+        retrieval: {
+          topM: Number((cfgCtx.retrieval && cfgCtx.retrieval.topM) || 12),
+          rerankK: Number((cfgCtx.retrieval && cfgCtx.retrieval.rerankK) || 4),
+          expandSynonyms: !!(cfgCtx.retrieval && cfgCtx.retrieval.expandSynonyms !== false),
+          useLLM: !!(cfgCtx.retrieval && cfgCtx.retrieval.useLLM !== false),
+        },
+        reading: {
+          kMax: Number((cfgCtx.reading && cfgCtx.reading.kMax) || 3),
+          perChunkTokenCap: Number((cfgCtx.reading && cfgCtx.reading.perChunkTokenCap) || 1200),
+          reserveAnswerTokens: Number((cfgCtx.reading && cfgCtx.reading.reserveAnswerTokens) || 800),
+        }
+      };
+
+      const run = async (kMax) => {
+        if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
+          throw new Error('aborted');
+        }
+        const cfg2 = { ...retrievalCfg, reading: { ...retrievalCfg.reading, kMax } };
+        const out = await answerWithRetrieval({ adapter: ContextPillsAdapter, context: ctx, query: userInput, config: cfg2 });
+        if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
+        if (manualStopFlag || (currentAbortController && currentAbortController.signal.aborted)) {
+          throw new Error('aborted');
+        }
+        // Build title map (pill label → docId) for Sources labels
+        let titleMap = new Map();
+        try {
+          const docs = await ContextPillsAdapter.listDocuments(ctx);
+          titleMap = new Map(docs.map(d => [String(d.id), d.title || 'Context']));
+        } catch {}
+        await renderAnswerWithSources(aiMessageElement, out, ContextPillsAdapter, ctx, titleMap);
+        return out;
+      };
+
+      try {
+        const first = await run(Number((cfgCtx.reading && cfgCtx.reading.kMax) || 3));
+        // Add thorough mode button when confidence low/medium
+        try {
+          if (first && first.confidence !== 'high') {
+            const actions = document.createElement('div');
+            actions.style.marginTop = '8px';
+            const btn = document.createElement('button');
+            btn.className = 'send-btn';
+            btn.textContent = 'Thorough mode (+1 section)';
+            btn.addEventListener('click', async () => {
+              btn.disabled = true;
+              try { await run(Number((cfgCtx.reading && cfgCtx.reading.kMax) || 3) + 1); } catch (e) { /* ignore if aborted */ }
+              btn.disabled = false;
+            });
+            actions.appendChild(btn);
+            aiMessageElement.appendChild(actions);
+          }
+        } catch {}
+      } catch (e) {
+        if (String(e && e.message) !== 'aborted') {
+          aiMessageElement.textContent = 'Could not produce an answer from the selected contexts.';
+        }
       }
+    } else {
+      // Regular chat streaming path
+      try { const { startThinking } = await import('../ui/ui.js'); stopThinking = startThinking(aiMessageElement, 'Thinking'); } catch {}
+      const stream = await sendStreamingPrompt(finalPrompt, options);
+      let buffer = '';
+      let lastRender = 0;
+      for await (const chunk of stream) {
+        if (manualStopFlag) break;
+        buffer += chunk;
+        if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
+        const now = Date.now();
+        if (now - lastRender > 120) {
+          aiMessageElement.innerHTML = renderMarkdown(unwrapMarkdownFenceProgressive(buffer));
+          lastRender = now;
+          scrollToBottom();
+        }
+      }
+      const unwrapped = unwrapFullCodeFence(buffer);
+      aiMessageElement.innerHTML = renderMarkdown(unwrapped);
+      try { const { addAskThisResultButton } = await import('../ui/ui.js'); addAskThisResultButton(aiMessageElement); } catch {}
     }
-    // Final render as markdown
-    const unwrapped = unwrapFullCodeFence(buffer);
-    aiMessageElement.innerHTML = renderMarkdown(unwrapped);
-    try { 
-      // Add Ask iChrome button after message completes
-      const { addAskThisResultButton } = await import('../ui/ui.js');
-      addAskThisResultButton(aiMessageElement);
-    } catch {}
   } catch (streamError) {
     const aborted = (currentAbortController && currentAbortController.signal && currentAbortController.signal.aborted) || manualStopFlag;
     if (!aborted) {
-      log.warn('Streaming failed, trying non-streaming:', streamError);
+      log.warn('Streaming/retrieval failed, trying non-streaming:', streamError);
       try {
         const response = await sendPrompt(finalPrompt);
-        // Stop thinking if still running
         if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
         const unwrapped2 = unwrapFullCodeFence(response);
-        // Typewriter effect for fallback path
-        try {
-          const { typewriterRenderMarkdown } = await import('../ui/ui.js');
-          await typewriterRenderMarkdown(aiMessageElement, unwrapped2, 3, 10);
-        } catch {
-          aiMessageElement.innerHTML = renderMarkdown(unwrapped2);
-        }
+        try { const { typewriterRenderMarkdown } = await import('../ui/ui.js'); await typewriterRenderMarkdown(aiMessageElement, unwrapped2, 3, 10); } catch { aiMessageElement.innerHTML = renderMarkdown(unwrapped2); }
         try { const { addAskThisResultButton } = await import('../ui/ui.js'); addAskThisResultButton(aiMessageElement); } catch {}
       } catch (promptError) {
         log.error('Chat request failed:', promptError);
@@ -756,8 +852,8 @@ async function sendMessage() {
     manualStopFlag = false;
     if (stopThinking) { try { stopThinking(); } catch {} }
     try {
-      const cfgCtx = window.CONFIG?.contextSelection || {};
-      if (cfgCtx && cfgCtx.autoClearAfterSend) {
+      const cfgCtx2 = window.CONFIG?.contextSelection || {};
+      if (cfgCtx2 && cfgCtx2.autoClearAfterSend) {
         clearSelectedContextsAfterSend();
       }
     } catch {}
@@ -834,7 +930,15 @@ async function handlePageRequest(_queryText) {
 
     // Phase 1: build compact index for the page in background and show progress
     try {
-      const ctx = { url: pageState.url };
+      const ctx = { 
+        url: pageState.url,
+        cached: {
+          title: pageState.title || '',
+          url: pageState.url || '',
+          chunks: Array.isArray(pageState.chunks) ? pageState.chunks.map((c) => ({ id: c.id, index: c.index, heading: c.heading, content: c.content, sizeBytes: c.sizeBytes })) : [],
+          headings: Array.isArray(pageState.chunks) ? pageState.chunks.map((c) => c.heading).filter(Boolean) : []
+        }
+      };
       // Show lightweight UI progress via retrieval-progress events
       // Do not await; run in background
       askWholeCorpus({ adapter: PageAdapter, context: ctx, config: { debug: false } }).catch(() => {});
@@ -1098,25 +1202,55 @@ function bindEventListeners() {
     log.info('Side panel cleanup completed');
   });
 
-  // Retrieval engine progress → subtle status updates (only for @Page)
+  // Retrieval engine progress → subtle status updates (@Page and pill contexts)
   try {
     let lastProgressTimer = null;
     document.addEventListener('retrieval-progress', (ev) => {
       try {
         const detail = ev && ev.detail || {};
         const key = String(detail.key || '');
-        if (!key.startsWith('page:')) {
-          // Ignore non-page indexing (e.g., history/downloads) to avoid disturbing their UI
-          return;
-        }
         const pct = typeof detail.percent === 'number' ? Math.max(0, Math.min(100, Math.round(detail.percent))) : 0;
-        if (detail.phase === 'done') {
-          updateStatus('Index built');
-          if (lastProgressTimer) clearTimeout(lastProgressTimer);
-          lastProgressTimer = setTimeout(() => { try { updateStatus(''); } catch {} }, 1200);
+        // Support page and contexts keys
+        if (key.startsWith('page:')) {
+          if (detail.phase === 'done') {
+            updateStatus('Index built');
+            if (lastProgressTimer) clearTimeout(lastProgressTimer);
+            lastProgressTimer = setTimeout(() => { try { updateStatus(''); } catch {} }, 1200);
+          } else {
+            updateStatus(`Indexing page… ${pct}%`);
+          }
+        } else if (key.startsWith('ctx:')) {
+          if (detail.phase === 'done') {
+            updateStatus('Contexts indexed');
+            if (lastProgressTimer) clearTimeout(lastProgressTimer);
+            lastProgressTimer = setTimeout(() => { try { updateStatus(''); } catch {} }, 1200);
+          } else {
+            updateStatus(`Indexing contexts… ${pct}%`);
+          }
         } else {
-          updateStatus(`Indexing page… ${pct}%`);
+          // Ignore other indexes
         }
+      } catch {}
+    });
+  } catch {}
+
+  // Pre-index pills corpus in background when the first pill is added
+  try {
+    const cfgCtx = window.CONFIG?.contextSelection || {};
+    let preindexTimer = null;
+    document.addEventListener('ctx-pill-added', () => {
+      try {
+        if (!cfgCtx.preindexOnPillAdd) return;
+        if (preindexTimer) { clearTimeout(preindexTimer); preindexTimer = null; }
+        preindexTimer = setTimeout(async () => {
+          try {
+            const pillsRaw = getSelectedContextsRaw();
+            if (!Array.isArray(pillsRaw) || pillsRaw.length === 0) return;
+            const ctx = { pills: pillsRaw };
+            // Fire-and-forget; engine has caching + dedupe
+            askWholeCorpus({ adapter: ContextPillsAdapter, context: ctx, config: { debug: false } }).catch(() => {});
+          } catch {}
+        }, 200);
       } catch {}
     });
   } catch {}
@@ -1137,10 +1271,20 @@ function bindEventListeners() {
   try {
     const cfg = window.CONFIG?.pageContent || {};
     if (cfg.clearOnTabSwitch && chrome && chrome.tabs && chrome.tabs.onActivated) {
+      let tabSwitchHintTimer = null;
       chrome.tabs.onActivated.addListener(() => {
         // Silently clear page context without posting an AI bubble
         clearPageState();
         try { clearPagePill(); } catch {}
+        // Optional: show a brief status hint
+        try {
+          if (cfg.showTabSwitchHint) {
+            const msg = String(cfg.clearedOnTabSwitchMessage || 'Page context cleared (tab switched).');
+            updateStatus(msg);
+            if (tabSwitchHintTimer) { try { clearTimeout(tabSwitchHintTimer); } catch {} }
+            tabSwitchHintTimer = setTimeout(() => { try { updateStatus(''); } catch {} }, 1500);
+          }
+        } catch {}
       });
     }
   } catch {}
