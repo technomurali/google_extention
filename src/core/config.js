@@ -141,6 +141,39 @@ const CONFIG = {
   // ONBOARDING HELP (shown once on panel open)
   // Configure the initial help message rendered in the chat area.
   // Disappears smoothly after user's first message.
+  //
+  // HOW TO TEST HELP SETTINGS:
+  // ============================================
+  // 1. SHOW HELP ON APPLICATION LOAD:
+  //    - Open Settings → Help section
+  //    - Toggle "Show Help on Application Load" ON/OFF
+  //    - Reload the side panel (close and reopen)
+  //    - ✅ ON: Welcome message appears with typewriter effect
+  //    - ✅ OFF: No welcome message appears on load
+  //
+  // 2. SHOW TOOLTIPS ON FIRST USE:
+  //    - Open Settings → Help section
+  //    - Toggle "Show Tooltips on First Use" ON/OFF
+  //    - Clear browser storage to reset "first use" state:
+  //      - Open Chrome DevTools (F12) → Application tab → Storage → Clear site data
+  //      - Or: chrome.storage.local.clear() in console
+  //    - ✅ ON: Tooltips appear on first interaction with features
+  //    - ✅ OFF: Tooltips are disabled
+  //
+  // QUICK TEST STEPS:
+  // ============================================
+  // A. Test "Show Help on Application Load":
+  //    1. Settings → Help → Toggle "Show Help on Application Load" ON
+  //    2. Close side panel completely
+  //    3. Reopen side panel → Should see welcome message
+  //    4. Toggle OFF → Reload → Should NOT see welcome message
+  //
+  // B. Test "Show Tooltips on First Use":
+  //    1. Settings → Help → Toggle "Show Tooltips on First Use" ON
+  //    2. Clear extension storage (see above)
+  //    3. Interact with features (e.g., hover over ChromePad items)
+  //    4. Verify tooltips appear on first use
+  //    5. Toggle OFF → Verify tooltips don't appear
   // ============================================
   onboarding: {
     enabled: true,

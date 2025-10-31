@@ -21,6 +21,7 @@ import {
   getDefaultSettings 
 } from '../services/settings.js';
 import { getVoices } from '../services/speech.js';
+import { hideOnboardingHelp } from './ui.js';
 
 const log = logger.create('SettingsModal');
 
@@ -800,7 +801,7 @@ function applyInputHeight(height) {
  */
 function renderHelpPanel(container) {
   getSettings('help').then(settings => {
-    // PRIMARY: Show help on load toggle
+    // Show help on load toggle
     const showOnLoadToggle = createToggleGroup(
       'Show Help on Application Load',
       'sp-settings-help-show-on-load',
@@ -810,19 +811,14 @@ function renderHelpPanel(container) {
         // Update config immediately
         if (window.CONFIG && window.CONFIG.onboarding) {
           window.CONFIG.onboarding.enabled = val;
+          // Hide onboarding immediately if disabled
+          if (!window.CONFIG.onboarding.enabled) {
+            hideOnboardingHelp();
+          }
         }
       }
     );
     container.appendChild(showOnLoadToggle);
-    
-    // Show onboarding toggle
-    const onboardingToggle = createToggleGroup(
-      'Show Onboarding Message',
-      'sp-settings-help-onboarding',
-      settings.showOnboarding !== false,
-      async (val) => await updateSettings('help', { showOnboarding: val })
-    );
-    container.appendChild(onboardingToggle);
     
     // Show tooltips toggle
     const tooltipsToggle = createToggleGroup(

@@ -98,8 +98,7 @@ const DEFAULT_SETTINGS = {
     showIcons: true,
   },
   help: {
-    showOnLoad: true, // PRIMARY: Controls whether help/onboarding shows on load
-    showOnboarding: true,
+    showOnLoad: true, // Controls whether help/onboarding shows on load
     showTooltips: true,
   },
 };

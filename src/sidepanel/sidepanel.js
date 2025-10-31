@@ -1229,6 +1229,22 @@ async function initializeSidePanel() {
     initializeAI();
     initThemeSync();
     initializeElements();
+    
+    // Initialize settings system FIRST before applying configuration
+    // This ensures onboarding settings are loaded before we decide whether to show help
+    await initializeSettings();
+    
+    // Check if help should be shown on load
+    const helpSettings = await getSettings('help');
+    if (helpSettings && 
+        helpSettings.showOnLoad !== false && 
+        window.CONFIG && window.CONFIG.onboarding) {
+      window.CONFIG.onboarding.enabled = true;
+    } else if (window.CONFIG && window.CONFIG.onboarding) {
+      window.CONFIG.onboarding.enabled = false;
+    }
+    
+    // Now apply configuration (which will respect the onboarding.enabled setting)
     applyConfiguration();
     enhanceAccessibility();
     // Refresh placeholder to include current tool label
@@ -1247,19 +1263,10 @@ async function initializeSidePanel() {
     setupTextareaResizing();
     setupToolsMenu();
     setupToolMentions();
-    // Initialize settings system first
-    await initializeSettings();
     
     // Setup settings modal
     await setupSettingsModal();
     
-    // Check if help should be shown on load
-    const helpSettings = await getSettings('help');
-    if (helpSettings && helpSettings.showOnLoad !== false && window.CONFIG && window.CONFIG.onboarding) {
-      window.CONFIG.onboarding.enabled = true;
-    } else if (window.CONFIG && window.CONFIG.onboarding) {
-      window.CONFIG.onboarding.enabled = false;
-    }
     autoGrowTextarea();
 
     // Bind event listeners
