@@ -584,6 +584,80 @@ function getRelativeTime(timestamp) {
   return formatDate(timestamp);
 }
 
+/**
+ * Detects if note content is markdown or plain text
+ * @param {string} content - Note content to analyze
+ * @returns {{isMarkdown: boolean, type: string, typeLabel: string, icon: string}}
+ */
+function detectNoteType(content) {
+  try {
+    const text = String(content || '').trim();
+    
+    // If empty, default to text file
+    if (!text) {
+      return {
+        isMarkdown: false,
+        type: 'txt',
+        typeLabel: 'Text File',
+        icon: '📄'
+      };
+    }
+
+    // Common markdown patterns
+    const markdownPatterns = [
+      /^#{1,6}\s+.+$/m,           // Headers (# ## ###)
+      /^\s*[-*+]\s+.+$/m,          // Unordered lists (- * +)
+      /^\s*\d+\.\s+.+$/m,          // Ordered lists (1. 2. 3.)
+      /^\s*>/m,                    // Blockquotes (>)
+      /\[.+\]\(.+\)/,              // Links [text](url)
+      /!\[.+\]\(.+\)/,             // Images ![alt](url)
+      /(\*\*|__).+\1/,             // Bold **text** or __text__
+      /(\*|_).+\1/,                // Italic *text* or _text_
+      /```[\s\S]*?```/,            // Code blocks ```
+      /`[^`]+`/,                   // Inline code `code`
+      /^---+$/m,                   // Horizontal rules (---)
+      /^\*\*\*+$/m,                // Horizontal rules (***)
+      /^\|\s*.+\s*\|/,             // Tables (| col |)
+    ];
+
+    // Check if content matches markdown patterns (filter out any undefined patterns for safety)
+    const hasMarkdown = markdownPatterns
+      .filter(pattern => pattern && typeof pattern.test === 'function')
+      .some(pattern => {
+        try {
+          return pattern.test(text);
+        } catch {
+          return false;
+        }
+      });
+
+    if (hasMarkdown) {
+      return {
+        isMarkdown: true,
+        type: 'md',
+        typeLabel: 'Markdown File',
+        icon: '📝'
+      };
+    }
+
+    return {
+      isMarkdown: false,
+      type: 'txt',
+      typeLabel: 'Text File',
+      icon: '📄'
+    };
+  } catch (error) {
+    // Fallback to text file if any error occurs
+    try { log.warn('Error detecting note type:', error); } catch {}
+    return {
+      isMarkdown: false,
+      type: 'txt',
+      typeLabel: 'Text File',
+      icon: '📄'
+    };
+  }
+}
+
 // Configuration: Number of lines to show in hover preview
 const HOVER_PREVIEW_LINES = 3; // Configurable: change to 2, 4, 5, etc.
 
@@ -780,13 +854,28 @@ export async function renderNotesListBubble() {
       row.style.transition = 'background 0.15s ease';
       row.style.cursor = 'pointer';
 
-      // Create custom styled tooltip (for filename only)
+      // Create custom styled tooltip (for filename and type)
       let tooltip = null;
+      const typeInfo = detectNoteType(n.content);
       if (n.content) {
         const previewText = getPreviewLines(n.content);
         if (previewText) {
           tooltip = document.createElement('div');
-          tooltip.textContent = previewText;
+          // Add type label at the top of tooltip
+          const typeLabel = document.createElement('div');
+          typeLabel.textContent = typeInfo.typeLabel;
+          typeLabel.style.fontWeight = '600';
+          typeLabel.style.marginBottom = '4px';
+          typeLabel.style.opacity = '0.9';
+          typeLabel.style.borderBottom = '1px solid rgba(255,255,255,0.2)';
+          typeLabel.style.paddingBottom = '4px';
+          
+          const contentPreview = document.createElement('div');
+          contentPreview.textContent = previewText;
+          contentPreview.style.marginTop = '4px';
+          
+          tooltip.appendChild(typeLabel);
+          tooltip.appendChild(contentPreview);
           try { activeTooltips.add(tooltip); } catch {}
           tooltip.style.position = 'fixed'; // Fixed to follow cursor
           tooltip.style.padding = '8px';
@@ -853,24 +942,57 @@ export async function renderNotesListBubble() {
         row.style.background = 'rgba(255,255,255,0.05)';
       });
 
-      // Single line: title + timestamp + actions
+      // Single line: icon + title + type + timestamp + actions
       const mainRow = document.createElement('div');
       mainRow.style.display = 'flex';
       mainRow.style.alignItems = 'center';
       mainRow.style.gap = '8px';
 
+      // Use typeInfo already detected above
+      
+      // Icon element
+      const iconElement = document.createElement('span');
+      iconElement.textContent = typeInfo.icon;
+      iconElement.style.fontSize = '16px';
+      iconElement.style.lineHeight = '1';
+      iconElement.style.flexShrink = '0';
+      iconElement.title = typeInfo.typeLabel;
+      
+      // Title container with icon
+      const titleContainer = document.createElement('div');
+      titleContainer.style.display = 'flex';
+      titleContainer.style.alignItems = 'center';
+      titleContainer.style.gap = '6px';
+      titleContainer.style.flex = '1';
+      titleContainer.style.minWidth = '0'; // Allow flex child to shrink
+      titleContainer.title = `${n.name || 'Untitled'} (${typeInfo.typeLabel})`;
+
       const noteTitle = document.createElement('div');
       noteTitle.textContent = n.name || 'Untitled';
       noteTitle.style.fontWeight = '600';
       noteTitle.style.fontSize = '13px';
-      noteTitle.style.flex = '1';
       noteTitle.style.overflow = 'hidden';
       noteTitle.style.textOverflow = 'ellipsis';
       noteTitle.style.whiteSpace = 'nowrap';
+      noteTitle.style.flex = '1';
+      noteTitle.style.minWidth = '0'; // Allow text to truncate
 
-      // Tooltip only on filename hover
+      // Type badge
+      const typeBadge = document.createElement('span');
+      typeBadge.textContent = `.${typeInfo.type}`;
+      typeBadge.style.fontSize = '10px';
+      typeBadge.style.opacity = '0.6';
+      typeBadge.style.fontWeight = '500';
+      typeBadge.style.flexShrink = '0';
+      typeBadge.title = typeInfo.typeLabel;
+
+      titleContainer.appendChild(iconElement);
+      titleContainer.appendChild(noteTitle);
+      titleContainer.appendChild(typeBadge);
+
+      // Tooltip on title container hover (includes icon and type info in tooltip)
       if (tooltip) {
-        noteTitle.addEventListener('mouseenter', () => {
+        titleContainer.addEventListener('mouseenter', () => {
           try { cleanupAllTooltips(); } catch {}
           document.body.appendChild(tooltip);
           setTimeout(() => {
@@ -878,7 +1000,7 @@ export async function renderNotesListBubble() {
           }, 10);
         });
 
-        noteTitle.addEventListener('mousemove', (e) => {
+        titleContainer.addEventListener('mousemove', (e) => {
           if (tooltip && tooltip.parentElement) {
             // Position above cursor
             const offsetX = 10;
@@ -888,7 +1010,7 @@ export async function renderNotesListBubble() {
           }
         });
 
-        noteTitle.addEventListener('mouseleave', () => {
+        titleContainer.addEventListener('mouseleave', () => {
           try { if (typeof tooltipHovered !== 'undefined' && tooltipHovered) return; } catch {}
           removeTooltip(tooltip);
         });
@@ -1047,7 +1169,7 @@ export async function renderNotesListBubble() {
       actions.appendChild(editBtn);
       actions.appendChild(delBtn);
 
-      mainRow.appendChild(noteTitle);
+      mainRow.appendChild(titleContainer);
       mainRow.appendChild(timestamp);
       mainRow.appendChild(actions);
 
