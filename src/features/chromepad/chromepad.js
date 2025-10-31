@@ -252,10 +252,56 @@ export function exportContent(name, rawMarkdown) {
   return exportNote(note);
 }
 
+/**
+ * Saves content as a new ChromePad note (creates and populates in one step)
+ * Handles name collisions by auto-appending (2), (3), etc.
+ * @param {string} name - Desired note name
+ * @param {string} content - Markdown content to save
+ * @returns {Promise<{id: string, name: string, content: string}>} Created note
+ */
+export async function saveNote(name, content) {
+  try {
+    const notesMap = await readNotesMap();
+    
+    // Generate unique name if collision exists
+    let uniqueName = String(name || 'Untitled').trim() || 'Untitled';
+    const existingNames = Object.values(notesMap).map(n => String(n.name || '').toLowerCase());
+    let counter = 2;
+    let candidateName = uniqueName;
+    
+    while (existingNames.includes(candidateName.toLowerCase())) {
+      candidateName = `${uniqueName} (${counter})`;
+      counter++;
+    }
+    
+    // Create note with content
+    const id = createId();
+    const now = Date.now();
+    const note = {
+      id,
+      name: candidateName,
+      content: String(content || ''),
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    notesMap[id] = note;
+    await writeNotesMap(notesMap);
+    
+    try { log.info('Saved note to ChromePad:', candidateName); } catch {}
+    return note;
+  } catch (err) {
+    try { log.error('Failed to save note to ChromePad:', err); } catch {}
+    throw err;
+  }
+}
+
 // Expose on window to avoid circular imports from ui.js
 try {
   window.ChromePad = window.ChromePad || {};
   window.ChromePad.exportContent = exportContent;
+  window.ChromePad.saveNote = saveNote;
+  window.ChromePad.renderNotesListBubble = renderNotesListBubble;
 } catch {}
 
 // -----------------------------
@@ -584,10 +630,12 @@ export async function renderNotesListBubble() {
     const speechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
     const translateBtn = bubble.querySelector('.msg-translate-btn');
     const exportBtn = bubble.querySelector('.msg-export-btn');
+    const saveBtn = bubble.querySelector('.msg-save-chromepad-btn');
     if (speechBtn) speechBtn.style.display = 'none';
     if (speechStopBtn) speechStopBtn.style.display = 'none';
     if (translateBtn) translateBtn.style.display = 'none';
     if (exportBtn) exportBtn.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
 
     // Add + New button in top-right (where translate button was)
     const newBtn = document.createElement('button');
@@ -1054,15 +1102,17 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
     bubble.style.paddingTop = '8px';
     const minimizeBtn = bubble.querySelector('.msg-minimize-btn');
     if (minimizeBtn) minimizeBtn.style.display = 'none';
-    // Hide native speech/stop/translate/export to avoid overlap; we reuse their logic via custom buttons
+    // Hide native speech/stop/translate/export/save to avoid overlap; we reuse their logic via custom buttons
     const nativeSpeechBtn = bubble.querySelector('.msg-speech-btn');
     const nativeSpeechStopBtn = bubble.querySelector('.msg-speech-stop-btn');
     const nativeTranslateBtn = bubble.querySelector('.msg-translate-btn');
     const nativeExportBtn = bubble.querySelector('.msg-export-btn');
+    const nativeSaveBtn = bubble.querySelector('.msg-save-chromepad-btn');
     if (nativeSpeechBtn) nativeSpeechBtn.style.display = 'none';
     if (nativeSpeechStopBtn) nativeSpeechStopBtn.style.display = 'none';
     if (nativeTranslateBtn) nativeTranslateBtn.style.display = 'none';
     if (nativeExportBtn) nativeExportBtn.style.display = 'none';
+    if (nativeSaveBtn) nativeSaveBtn.style.display = 'none';
   }
 
   // Compact header: Back | Title + icons

@@ -338,6 +338,14 @@ const CONFIG = {
       allowInterrupt: true,   // Allow user to interrupt animation by typing
       maxAnimateChars: 5000,  // Skip animation if result exceeds this (performance optimization)
     },
+    saveToChromePad: {
+      enabled: true,                    // Enable/disable "Save to ChromePad" button on AI messages
+      successMessageDuration: 5000,     // Duration in ms to show success message (5000 = 5 seconds)
+      autoHideSuccessMessage: false,    // Auto-hide success message after duration (false = stays visible)
+      successMessage: '✓ Saved to ChromePad. Click here to view',  // Success message text
+      errorMessage: 'Failed to save to ChromePad. Please try again.',  // Error message text
+      unavailableMessage: 'ChromePad is currently unavailable. Please reload and try again.',
+    },
   },
 
   // ============================================

@@ -971,6 +971,145 @@ export function setupToolsMenu() {
 }
 
 /**
+ * Saves AI response to ChromePad
+ * @param {HTMLElement} bubble - Message bubble element
+ * @param {HTMLElement} body - Message body element
+ * @param {HTMLElement} button - Save button (for visual feedback)
+ */
+async function saveAIResponseToChromePad(bubble, body, button) {
+  const saveCfg = (window.CONFIG && window.CONFIG.chromePad && window.CONFIG.chromePad.saveToChromePad) || {};
+  
+  try {
+    // Check if ChromePad is available
+    if (!window.ChromePad || typeof window.ChromePad.saveNote !== 'function') {
+      const msg = saveCfg.unavailableMessage || 'ChromePad is currently unavailable. Please reload and try again.';
+      alert(msg);
+      console.error('ChromePad.saveNote() not found on window');
+      return;
+    }
+
+    // Disable button during save
+    if (button) {
+      button.disabled = true;
+      button.style.opacity = '0.5';
+      button.style.cursor = 'wait';
+    }
+
+    // Extract content - prioritize rawMarkdown for proper formatting
+    const rawMarkdown = String(bubble.dataset.rawMarkdown || body.textContent || '').trim();
+    if (!rawMarkdown) {
+      alert('No content to save.');
+      return;
+    }
+
+    // Generate note name from first line (like export does)
+    const firstLine = String(body.textContent || '').trim().split('\n')[0] || 'AI Response';
+    const noteName = firstLine.slice(0, 60); // Max 60 chars like export
+
+    // Save to ChromePad
+    const note = await window.ChromePad.saveNote(noteName, rawMarkdown);
+    
+    // Show success message
+    showSaveSuccessMessage(note, saveCfg);
+
+  } catch (error) {
+    console.error('Failed to save to ChromePad:', error);
+    const errorMsg = saveCfg.errorMessage || 'Failed to save to ChromePad. Please try again.';
+    showSaveErrorMessage(errorMsg);
+  } finally {
+    // Re-enable button
+    if (button) {
+      button.disabled = false;
+      button.style.opacity = '';
+      button.style.cursor = '';
+    }
+  }
+}
+
+/**
+ * Shows success message after saving to ChromePad
+ * @param {Object} note - Saved note object with id, name
+ * @param {Object} config - Configuration object
+ */
+function showSaveSuccessMessage(note, config) {
+  const successText = config.successMessage || '✓ Saved to ChromePad. Check in ChromePad';
+  const duration = Number(config.successMessageDuration) || 5000;
+  const autoHide = config.autoHideSuccessMessage !== false;
+
+  const successBubble = appendMessage(successText, 'ai');
+  successBubble.style.cursor = 'pointer';
+  successBubble.style.opacity = '0.85';
+  successBubble.style.background = 'rgba(76, 175, 80, 0.15)'; // Light green tint
+  successBubble.style.borderLeft = '3px solid #4CAF50'; // Green accent
+  successBubble.title = 'Click to view in ChromePad';
+
+  // Add click handler to navigate to ChromePad
+  successBubble.addEventListener('click', () => {
+    try {
+      // Switch to ChromePad tool
+      setSelectedTool(TOOLS.CHROMEPAD);
+      
+      // Trigger ChromePad list view
+      if (window.ChromePad && typeof window.ChromePad.renderNotesListBubble === 'function') {
+        window.ChromePad.renderNotesListBubble();
+      }
+      
+      // Message stays visible as conversation history (industry standard for chat apps)
+      // This allows users to reference what was saved and maintain conversation flow
+    } catch (err) {
+      console.error('Failed to navigate to ChromePad:', err);
+    }
+  });
+
+  // Auto-hide after configured duration
+  if (autoHide) {
+    setTimeout(() => {
+      try {
+        if (successBubble && successBubble.parentElement) {
+          successBubble.style.opacity = '0';
+          successBubble.style.transition = 'opacity 0.3s ease';
+          setTimeout(() => {
+            if (successBubble.parentElement) {
+              successBubble.remove();
+            }
+          }, 300);
+        }
+      } catch {}
+    }, duration);
+  }
+
+  scrollToBottom();
+}
+
+/**
+ * Shows error message when save fails
+ * @param {string} errorText - Error message text
+ */
+function showSaveErrorMessage(errorText) {
+  const errorBubble = appendMessage(errorText, 'ai');
+  errorBubble.style.opacity = '0.85';
+  errorBubble.style.background = 'rgba(244, 67, 54, 0.15)'; // Light red tint
+  errorBubble.style.borderLeft = '3px solid #F44336'; // Red accent
+
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    try {
+      if (errorBubble && errorBubble.parentElement) {
+        errorBubble.style.opacity = '0';
+        errorBubble.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => {
+          if (errorBubble.parentElement) {
+            errorBubble.remove();
+          }
+        }, 300);
+      }
+    } catch {}
+  }, 5000);
+
+  scrollToBottom();
+}
+
+/**
  * Appends a message bubble to the chat
  * @param {string} text - Message text
  * @param {string} role - Either 'user' or 'ai'
@@ -1316,6 +1455,24 @@ export function appendMessage(text, role) {
         } catch {}
       }, { signal: abortController.signal });
       bubble.appendChild(exportBtn);
+    } catch {}
+
+    // Save to ChromePad button
+    try {
+      const saveCfg = (window.CONFIG && window.CONFIG.chromePad && window.CONFIG.chromePad.saveToChromePad) || {};
+      if (saveCfg.enabled !== false) {
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'msg-save-chromepad-btn';
+        saveBtn.title = 'Save to ChromePad';
+        saveBtn.setAttribute('aria-label', 'Save to ChromePad');
+        // Floppy disk icon (save icon)
+        saveBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>';
+        saveBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          await saveAIResponseToChromePad(bubble, body, saveBtn);
+        }, { signal: abortController.signal });
+        bubble.appendChild(saveBtn);
+      }
     } catch {}
 
     // Ask iChrome button is added after generation completes via helper below
