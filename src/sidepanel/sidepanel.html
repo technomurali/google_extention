@@ -24,7 +24,7 @@ JAVASCRIPT:
 - sidepanel.js: All interactive logic
 ============================================================================
 -->
-<html>
+<html lang="en">
 <head>
   <!-- Character encoding and viewport settings -->
   <meta charset="UTF-8">
@@ -41,6 +41,9 @@ JAVASCRIPT:
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
       height: 100%;
       box-sizing: border-box;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
       color-scheme: light dark;
     }
     /* --------------------------------------------------------------
@@ -124,6 +127,21 @@ JAVASCRIPT:
     .settings-btn:hover {
       background: var(--sp-button-bg-hover, rgba(255,255,255,0.25));
       border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35));
+    }
+    /* Accessible focus outlines */
+    .settings-btn:focus-visible,
+    .send-btn:focus-visible,
+    .input-wrap .tools-btn:focus-visible,
+    .msg .msg-minimize-btn:focus-visible,
+    .msg .msg-export-btn:focus-visible,
+    .msg .msg-save-chromepad-btn:focus-visible,
+    .msg .msg-translate-btn:focus-visible,
+    .msg .msg-speech-btn:focus-visible,
+    .msg .msg-speech-stop-btn:focus-visible,
+    .context-pills-row .clear:focus-visible,
+    .content .ctx-add-btn:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
     }
     /* Per-bubble minimize styles */
     .msg { position: relative; }
@@ -509,11 +527,83 @@ JAVASCRIPT:
     /* ---------------- Markdown content styling ---------------- */
     .msg .msg-body h1, .msg .msg-body h2, .msg .msg-body h3,
     .msg .msg-body h4, .msg .msg-body h5, .msg .msg-body h6 {
-      margin: 10px 0 6px;
+      margin: 0.4em 0 0.1em;
       line-height: 1.25;
     }
-    .msg .msg-body p { margin: 6px 0; }
-    .msg .msg-body ul, .msg .msg-body ol { margin: 6px 0 6px 18px; }
+    /* Scaled heading sizes and subtle hierarchical indentation */
+    .msg .msg-body h1 { font-size: 1.25rem; font-weight: 700; padding-left: 0; }
+    .msg .msg-body h2 { font-size: 1.125rem; font-weight: 700; padding-left: 0.25em; }
+    .msg .msg-body h3 { font-size: 1rem; font-weight: 700; padding-left: 0.5em; }
+    .msg .msg-body h4 { font-size: 0.95rem; font-weight: 600; padding-left: 0.75em; }
+    .msg .msg-body h5 { font-size: 0.9rem; font-weight: 600; padding-left: 1em; }
+    .msg .msg-body h6 { font-size: 0.875rem; font-weight: 600; padding-left: 1.25em; }
+    .msg .msg-body p { margin: 0.25em 0; padding-left: 5ch; }
+    .msg .msg-body ul, .msg .msg-body ol {
+      margin: 0.25em 0;
+      padding-left: 5ch; /* ensure at least 5 spaces from left */
+      list-style-position: outside;
+    }
+    .msg .msg-body li + li { margin-top: 0.1em; }
+
+    /* Tighten spacing between headings and subsequent content */
+    .msg .msg-body h1 + h2,
+    .msg .msg-body h2 + h3,
+    .msg .msg-body h3 + h4,
+    .msg .msg-body h4 + h5,
+    .msg .msg-body h5 + h6 { margin-top: 0.1em; }
+    .msg .msg-body h1 + p,
+    .msg .msg-body h2 + p,
+    .msg .msg-body h3 + p,
+    .msg .msg-body h4 + p,
+    .msg .msg-body h5 + p,
+    .msg .msg-body h6 + p { margin-top: 0.1em; }
+    .msg .msg-body h1 + ul,
+    .msg .msg-body h1 + ol,
+    .msg .msg-body h2 + ul,
+    .msg .msg-body h2 + ol,
+    .msg .msg-body h3 + ul,
+    .msg .msg-body h3 + ol,
+    .msg .msg-body h4 + ul,
+    .msg .msg-body h4 + ol,
+    .msg .msg-body h5 + ul,
+    .msg .msg-body h5 + ol,
+    .msg .msg-body h6 + ul,
+    .msg .msg-body h6 + ol { margin-top: 0.1em; }
+
+    /* Tighten spacing between paragraphs and lists */
+    .msg .msg-body p + ul,
+    .msg .msg-body p + ol,
+    .msg .msg-body ul + p,
+    .msg .msg-body ol + p { margin-top: 0.1em; }
+    .msg .msg-body ul + ul, .msg .msg-body ol + ol,
+    .msg .msg-body ul + ol, .msg .msg-body ol + ul {
+      margin-top: 0;
+    }
+    /* Reduce gap for **term** - description patterns (bold followed by dash) */
+    .msg .msg-body p:has(strong),
+    .msg .msg-body li:has(strong) {
+      line-height: 1.2;
+      margin: 0.1em 0;
+    }
+    .msg .msg-body p:has(strong) + p:has(strong),
+    .msg .msg-body li:has(strong) + li:has(strong) {
+      margin-top: 0.05em;
+    }
+    .msg .msg-body strong {
+      display: inline;
+      margin: 0;
+    }
+    /* Reduce gap between list items with bold text and their nested lists */
+    .msg .msg-body li:has(strong) > ul,
+    .msg .msg-body li:has(strong) > ol {
+      margin-top: 0.1em;
+      margin-bottom: 0.1em;
+    }
+    .msg .msg-body li ul,
+    .msg .msg-body li ol {
+      margin-top: 0.1em;
+      margin-bottom: 0.1em;
+    }
     .msg .msg-body blockquote {
       margin: 6px 0;
       padding: 6px 8px;
@@ -528,12 +618,14 @@ JAVASCRIPT:
       background: rgba(0,0,0,0.35);
       overflow: auto;
       border: 1px solid rgba(255,255,255,0.15);
+      font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
     }
     .msg .msg-body code {
       background: rgba(0,0,0,0.35);
       border-radius: 4px;
       padding: 2px 4px;
       border: 1px solid rgba(255,255,255,0.15);
+      font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
     }
     .msg .msg-body hr { border: 0; height: 1px; background: rgba(255,255,255,0.2); margin: 8px 0; }
     .msg .msg-body a { color: #A9C7FF; text-decoration: underline; }
@@ -615,7 +707,7 @@ JAVASCRIPT:
 <!-- ============================================================================
      BODY - Main UI Structure
      ============================================================================ -->
-<body>
+<body dir="auto">
   <!-- Main container: Full-height flex layout with gradient background -->
   <div class="container">
     
@@ -623,11 +715,11 @@ JAVASCRIPT:
     <!-- Displays extension title and AI availability status -->
     <div class="topbar">
       <div class="topbar-left">
-        <div class="title" id="sp-title"></div>        <!-- Title (set by config.js) -->
+        <div class="title" id="sp-title" role="heading" aria-level="1"></div>        <!-- Title (set by config.js) -->
       </div>
       <div class="topbar-right">
-        <div class="status" id="sp-status"></div>      <!-- AI status indicator -->
-        <button class="settings-btn" id="sp-settings-btn" title="Settings">⚙️</button>
+        <div class="status" id="sp-status" aria-live="polite"></div>      <!-- AI status indicator -->
+        <button class="settings-btn" id="sp-settings-btn" title="Settings" aria-label="Settings">⚙️</button>
       </div>
     </div>
     
@@ -635,7 +727,7 @@ JAVASCRIPT:
     
     <!-- ========== MESSAGE DISPLAY AREA ========== -->
     <!-- Scrollable container where chat messages and history results appear -->
-    <div class="content" id="sp-content"></div>
+    <div class="content" id="sp-content" role="main" aria-live="polite"></div>
     
     <!-- ========== INPUT SECTION ========== -->
     <!-- Contains textarea, resize handle, and send button -->
@@ -649,7 +741,7 @@ JAVASCRIPT:
           <textarea class="input" id="sp-input" placeholder="" rows="3"></textarea>
 
           <!-- Tools button -->
-          <button class="tools-btn" id="sp-tools" title="Tools">
+          <button class="tools-btn" id="sp-tools" title="Tools" aria-label="Tools">
             <!-- simple list icon (three dots) -->
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
               <circle cx="5" cy="12" r="2"/>
@@ -659,7 +751,7 @@ JAVASCRIPT:
           </button>
 
           <!-- Send button with SVG icon -->
-          <button class="send-btn" id="sp-send" title="Send">
+          <button class="send-btn" id="sp-send" title="Send" aria-label="Send">
             <!-- Paper airplane icon (send symbol) -->
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M3 12L21 3L14 21L11 13L3 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>

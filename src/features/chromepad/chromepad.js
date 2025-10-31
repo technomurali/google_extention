@@ -23,6 +23,10 @@ import { getSettings } from '../../services/settings.js';
 
 const log = logger.create('ChromePad');
 
+// User guide note identifier (protected note that cannot be edited/deleted)
+const USER_GUIDE_NOTE_NAME = 'iChrome_User_Guide.md';
+const USER_GUIDE_FILE_PATH = 'docs/USER_GUIDE.md';
+
 // Track if ChromePad list is already shown to prevent duplicates
 let chromePadListVisible = false;
 
@@ -337,6 +341,61 @@ function sortNotesArray(arr) {
   return arr.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
+/**
+ * Checks if a note is the protected user guide note
+ * @param {Object} note - Note object with name property
+ * @returns {boolean}
+ */
+function isUserGuideNote(note) {
+  if (!note || !note.name) return false;
+  return String(note.name).trim() === USER_GUIDE_NOTE_NAME;
+}
+
+/**
+ * Initializes the user guide note in ChromePad if it doesn't exist
+ * Reads the guide content from the docs file and creates a note
+ */
+async function initializeUserGuideNote() {
+  try {
+    const notesMap = await readNotesMap();
+    
+    // Check if user guide note already exists
+    const existingGuide = Object.values(notesMap).find(n => isUserGuideNote(n));
+    if (existingGuide) {
+      return; // Already exists
+    }
+    
+    // Fetch the user guide content
+    const url = chrome.runtime.getURL(USER_GUIDE_FILE_PATH);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      log.warn('Could not load user guide file:', response.status);
+      return;
+    }
+    
+    const guideContent = await response.text();
+    
+    // Create the user guide note
+    const guideId = createId();
+    const now = Date.now();
+    const guideNote = {
+      id: guideId,
+      name: USER_GUIDE_NOTE_NAME,
+      content: guideContent,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    notesMap[guideId] = guideNote;
+    await writeNotesMap(notesMap);
+    
+    log.info('User guide note initialized in ChromePad');
+  } catch (error) {
+    log.error('Failed to initialize user guide note:', error);
+  }
+}
+
 // -----------------------------
 // File Import Helpers
 // -----------------------------
@@ -538,6 +597,13 @@ export async function updateNote(noteId, fields) {
   const map = await readNotesMap();
   const existing = map[noteId];
   if (!existing) return null;
+  
+  // Prevent updates to user guide note (name and content)
+  if (isUserGuideNote(existing)) {
+    log.warn('Attempted to update protected user guide note');
+    return existing; // Return unchanged note
+  }
+  
   const updated = { ...existing, ...fields, updatedAt: Date.now() };
   map[noteId] = updated;
   await writeNotesMap(map);
@@ -547,7 +613,15 @@ export async function updateNote(noteId, fields) {
 export async function deleteNote(noteId) {
   if (!noteId) return false;
   const map = await readNotesMap();
-  if (!map[noteId]) return false;
+  const note = map[noteId];
+  if (!note) return false;
+  
+  // Prevent deletion of user guide note
+  if (isUserGuideNote(note)) {
+    log.warn('Attempted to delete protected user guide note');
+    return false;
+  }
+  
   delete map[noteId];
   await writeNotesMap(map);
   return true;
@@ -679,6 +753,8 @@ function getPreviewLines(text, maxLines = HOVER_PREVIEW_LINES) {
 }
 
 export async function renderNotesListBubble() {
+  // Initialize user guide note if it doesn't exist
+  await initializeUserGuideNote();
   // Prevent duplicate lists in the same session
   if (chromePadListVisible) {
     log.debug('ChromePad list already visible, skipping duplicate render');
@@ -1070,7 +1146,8 @@ export async function renderNotesListBubble() {
       previewBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         try { cleanupAllTooltips(); } catch {}
-        await renderEditorBubble(n.id, true); // true = open in preview mode
+        // User guide always opens in preview mode
+        await renderEditorBubble(n.id, true); // Always open in preview mode (or use isGuide to force guide to preview)
       });
 
       const editBtn = document.createElement('button');
@@ -1102,11 +1179,21 @@ export async function renderNotesListBubble() {
         }
       });
       editBtn.addEventListener('mouseleave', () => editBtn.style.opacity = '0.6');
-      editBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        try { cleanupAllTooltips(); } catch {}
-        await renderEditorBubble(n.id);
-      });
+      
+      // Disable edit button for user guide note
+      const isGuide = isUserGuideNote(n);
+      if (isGuide) {
+        editBtn.disabled = true;
+        editBtn.style.opacity = '0.3';
+        editBtn.style.cursor = 'not-allowed';
+        editBtn.title = 'Edit (protected note)';
+      } else {
+        editBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try { cleanupAllTooltips(); } catch {}
+          await renderEditorBubble(n.id);
+        });
+      }
 
       const delBtn = document.createElement('button');
       delBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1141,14 +1228,23 @@ export async function renderNotesListBubble() {
         }
       });
       delBtn.addEventListener('mouseleave', () => delBtn.style.opacity = '0.6');
-      delBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const ok = confirm(`Delete "${n.name}"?`);
-        if (!ok) return;
-        await deleteNote(n.id);
-        await refreshList();
-        scrollToBottom();
-      });
+      
+      // Disable delete button for user guide note
+      if (isGuide) {
+        delBtn.disabled = true;
+        delBtn.style.opacity = '0.3';
+        delBtn.style.cursor = 'not-allowed';
+        delBtn.title = 'Delete (protected note)';
+      } else {
+        delBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const ok = confirm(`Delete "${n.name}"?`);
+          if (!ok) return;
+          await deleteNote(n.id);
+          await refreshList();
+          scrollToBottom();
+        });
+      }
 
       // Ask iChrome (add note as context pill)
       const askBtn = document.createElement('button');
@@ -1187,9 +1283,10 @@ export async function renderNotesListBubble() {
 
       // Click to open
       row.addEventListener('click', async (e) => {
-        if (e.target === editBtn || e.target === delBtn) return;
+        if (e.target === editBtn || e.target === delBtn || e.target.closest('button')) return;
         try { cleanupAllTooltips(); } catch {}
-        await renderEditorBubble(n.id);
+        // User guide always opens in preview mode (read-only)
+        await renderEditorBubble(n.id, isGuide); // isGuide=true forces preview mode
       });
 
       list.appendChild(row);
@@ -1220,6 +1317,9 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
     const err = appendMessage('Note not found.', 'ai');
     return err;
   }
+
+  // Check if this is the protected user guide note
+  const isGuide = isUserGuideNote(note);
 
   const body = appendMessage('', 'ai');
   body.innerHTML = '';
@@ -1669,6 +1769,32 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
   contentArea.value = note.content || '';
   contentArea.placeholder = 'Start writing...';
   contentArea.rows = 8;
+  
+  // Disable editing-related buttons and inputs for user guide note
+  if (isGuide) {
+    const disableButton = (btn, tooltip) => {
+      btn.disabled = true;
+      btn.style.opacity = '0.3';
+      btn.style.cursor = 'not-allowed';
+      if (tooltip) btn.title = tooltip;
+    };
+    
+    disableButton(saveBtn, 'Save (protected note)');
+    disableButton(delBtn, 'Delete (protected note)');
+    disableButton(editModeBtn, 'Edit (protected note)');
+    disableButton(exportBtn, 'Export (protected note)');
+    disableButton(rewriteBtn, 'Rewrite (protected note)');
+    disableButton(proofBtn, 'Proofread (protected note)');
+    disableButton(genBtn, 'Generate (protected note)');
+    
+    // Disable name and content inputs
+    nameInput.disabled = true;
+    nameInput.style.opacity = '0.6';
+    nameInput.style.cursor = 'not-allowed';
+    contentArea.disabled = true;
+    contentArea.style.opacity = '0.6';
+    contentArea.style.cursor = 'not-allowed';
+  }
   contentArea.style.width = '100%';
   contentArea.style.boxSizing = 'border-box';
   contentArea.style.padding = '8px';
