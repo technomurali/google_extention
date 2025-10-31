@@ -261,7 +261,7 @@ const CONFIG = {
     chunkLabelTemplate: 'Chunk {index}/{total} ({size})',
     processingChunkTemplate: 'Processing chunk {index}/{total}...',
     synthesizingLabel: 'Synthesizing final answer...',
-    pillTruncateChars: 15,        // Characters shown on pill label
+    pillTruncateChars: 5,        // Characters shown on pill label
 
     // URL optimization for list-to-context (History/Bookmarks/Downloads)
     optimizeURLs: true,           // Enable URL/domain optimization in preview sent to LLM

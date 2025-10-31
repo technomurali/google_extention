@@ -280,7 +280,10 @@ function showCtxAddButtonNearSelection() {
   btn.textContent = cfg.buttonLabel;
   btn.disabled = maxReached;
   const maxLabel = cfg.unlimitedChunks ? '∞' : String(cfg.maxItems);
-  btn.title = maxReached ? `${cfg.pillCounterTemplate.replace('{count}', String(selectedContexts.length)).replace('{max}', maxLabel)}` : cfg.buttonLabel;
+  const titleText = maxReached 
+    ? `${cfg.pillCounterTemplate.replace('{count}', String(selectedContexts.length)).replace('{max}', maxLabel)}`
+    : cfg.buttonLabel;
+  btn.title = titleText;
 
   // Position button slightly above selection
   const top = rect.top - hostRect.top - 30 + elements.content.scrollTop;
@@ -516,9 +519,11 @@ function updateContextPillsUI() {
   // Re-append actions
   const actionsNew = document.createElement('div');
   actionsNew.className = 'actions';
-  const countText = cfg.pillCounterTemplate
-    .replace('{count}', String(selectedContexts.length))
-    .replace('{max}', cfg.unlimitedChunks ? '∞' : String(cfg.maxItems));
+  const countText = cfg.unlimitedChunks 
+    ? `${selectedContexts.length} ${selectedContexts.length === 1 ? 'chunk' : 'chunks'}`
+    : cfg.pillCounterTemplate
+        .replace('{count}', String(selectedContexts.length))
+        .replace('{max}', String(cfg.maxItems));
 
   const counterSpan = document.createElement('span');
   counterSpan.className = 'counter';
