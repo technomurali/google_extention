@@ -32,6 +32,7 @@ export function applyTheme(theme) {
     root.style.setProperty('--tab-bar-header-overlay', 'rgba(255,255,255,0.05)');
     root.style.setProperty('--search-input-background', 'rgba(255,255,255,0.1)');
     root.style.setProperty('--search-input-focus-background', 'rgba(255,255,255,0.14)');
+    root.style.setProperty('--dropdown-background', '#2a2a2a');
     root.style.setProperty('--search-input-text-color', '#f1f1f1');
     root.style.setProperty('--search-input-placeholder-color', 'rgba(255,255,255,0.5)');
     root.style.setProperty('--sp-text-color', '#f1f1f1');
@@ -56,6 +57,7 @@ export function applyTheme(theme) {
     root.style.setProperty('--tab-bar-header-overlay', colors.headerOverlay || 'rgba(0,0,0,0.1)');
     root.style.setProperty('--search-input-background', searchInput.background || 'rgba(255,255,255,0.9)');
     root.style.setProperty('--search-input-focus-background', searchInput.focusBackground || 'rgba(255,255,255,1)');
+    root.style.setProperty('--dropdown-background', 'rgba(255,255,255,1)');
     root.style.setProperty('--search-input-text-color', searchInput.textColor || '#333');
     root.style.setProperty('--search-input-placeholder-color', searchInput.placeholderColor || 'rgba(0,0,0,0.4)');
     root.style.setProperty('--sp-text-color', '#ffffff');

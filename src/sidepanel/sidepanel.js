@@ -24,13 +24,18 @@ import {
   initializeSpeech,
   isSpeechAvailable,
   getVoices,
-  getSettings,
-  updateSettings,
+  getSpeechSettings,
+  updateSettings as updateSpeechSettings,
   isSpeaking,
   toggle as toggleSpeech,
   stop as stopSpeech,
   cleanup as cleanupSpeech,
 } from '../services/speech.js';
+import { 
+  initializeSettingsModal, 
+  openModal as openSettingsModal 
+} from '../ui/settings-modal.js';
+import { initializeSettings, getSettings } from '../services/settings.js';
 import {
   initializeElements,
   applyConfiguration,
@@ -946,7 +951,7 @@ async function handlePageRequest(_queryText) {
     }
 
     // 2) Chunk
-    const chunks = chunkContent(payload, {
+    const chunks = await chunkContent(payload, {
       maxChunkChars: Number(cfg.maxChunkChars) || 12000,
       overlapChars: Number(cfg.overlapChars) || 500,
       minChunkChars: Number(cfg.minChunkChars) || 1000,
@@ -998,151 +1003,26 @@ async function handlePageRequest(_queryText) {
 }
 
 /**
- * Sets up speech settings modal
+ * Sets up settings modal (replaces old speech settings)
  */
-function setupSpeechSettings() {
+async function setupSettingsModal() {
   const settingsBtn = document.getElementById('sp-settings-btn');
-  const modal = document.getElementById('sp-speech-settings');
-  const closeBtn = document.getElementById('sp-speech-close');
-  const voiceMenu = document.getElementById('sp-voice-menu');
-  const voiceToggle = document.getElementById('sp-voice-toggle');
-  const speedSlider = document.getElementById('sp-speed-slider');
-  const speedValue = document.getElementById('sp-speed-value');
-  const pitchSlider = document.getElementById('sp-pitch-slider');
-  const pitchValue = document.getElementById('sp-pitch-value');
-  const volumeSlider = document.getElementById('sp-volume-slider');
-  const volumeValue = document.getElementById('sp-volume-value');
-  const testBtn = document.getElementById('sp-test-voice');
+  if (!settingsBtn) return;
 
-  if (!settingsBtn || !modal) return;
+  // Initialize settings modal
+  await initializeSettingsModal();
 
-  // Load and populate voices
-  async function loadVoices() {
-    try {
-      const voices = await getVoices();
-      const settings = getSettings();
-      const config = window.CONFIG?.speech || {};
-
-      if (voiceMenu && voiceToggle) {
-        if (!voices || voices.length === 0) {
-          voiceToggle.textContent = (config.labels?.noVoices || 'No voices available');
-          voiceMenu.innerHTML = '';
-          return;
-        }
-        voiceMenu.innerHTML = '';
-        const frag = document.createDocumentFragment();
-        voices.forEach((voice) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'item';
-          const langInfo = config.showVoiceLanguage ? ` (${voice.lang})` : '';
-          btn.textContent = `${voice.name}${langInfo}`;
-          btn.dataset.voiceName = voice.name;
-          btn.addEventListener('click', async () => {
-            await updateSettings({ voice });
-            voiceToggle.textContent = `${voice.name}${langInfo}`;
-            // Close and if currently speaking, restart with new voice
-            const menuEl = document.getElementById('sp-voice-menu');
-            if (menuEl) menuEl.style.display = 'none';
-            if (isSpeaking && isSpeaking()) {
-              stopSpeech();
-              // Optionally: auto-restart last AI bubble if desired (skipped per spec)
-            }
-          }, { once: true });
-          frag.appendChild(btn);
-        });
-        voiceMenu.appendChild(frag);
-        // Set toggle label
-        if (settings.voice) {
-          const v = voices.find(v => v.name === settings.voice.name) || settings.voice;
-          voiceToggle.textContent = `${v.name}${config.showVoiceLanguage ? ` (${v.lang})` : ''}`;
-        } else {
-          const v0 = voices[0];
-          voiceToggle.textContent = `${v0.name}${config.showVoiceLanguage ? ` (${v0.lang})` : ''}`;
-        }
-      }
-    } catch (error) {
-      log.error('Failed to load voices:', error);
-    }
-  }
-
-  // Load current settings
-  function loadCurrentSettings() {
-    const settings = getSettings();
-    
-    if (speedSlider) speedSlider.value = settings.rate;
-    if (speedValue) speedValue.textContent = `${settings.rate.toFixed(1)}×`;
-    
-    if (pitchSlider) pitchSlider.value = settings.pitch;
-    if (pitchValue) pitchValue.textContent = settings.pitch.toFixed(1);
-    
-    if (volumeSlider) volumeSlider.value = settings.volume;
-    if (volumeValue) volumeValue.textContent = `${Math.round(settings.volume * 100)}%`;
-  }
-
-  // Open modal
-  settingsBtn?.addEventListener('click', async () => {
-    await loadVoices();
-    loadCurrentSettings();
-    if (modal) modal.style.display = 'flex';
+  // Open modal on button click
+  settingsBtn.addEventListener('click', async () => {
+    await openSettingsModal();
   });
 
-  // Close modal
-  const closeModal = () => {
-    if (modal) modal.style.display = 'none';
-  };
-
-  closeBtn?.addEventListener('click', closeModal);
-  modal?.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
-  });
-
-  // Voice selection
-  // Toggle voice menu open/close
-  voiceToggle?.addEventListener('click', () => {
-    if (!voiceMenu) return;
-    const isOpen = voiceMenu.style.display === 'block';
-    voiceMenu.style.display = isOpen ? 'none' : 'block';
-  });
-
-  // Close when clicking outside panel
-  document.addEventListener('click', (ev) => {
-    if (!voiceMenu || !voiceToggle) return;
-    const target = ev.target;
-    const holder = document.getElementById('sp-voice');
-    if (holder && !holder.contains(target)) {
-      voiceMenu.style.display = 'none';
-    }
-  });
-
-  // Speed control
-  speedSlider?.addEventListener('input', async () => {
-    const rate = parseFloat(speedSlider.value);
-    if (speedValue) speedValue.textContent = `${rate.toFixed(1)}×`;
-    await updateSettings({ rate });
-  });
-
-  // Pitch control
-  pitchSlider?.addEventListener('input', async () => {
-    const pitch = parseFloat(pitchSlider.value);
-    if (pitchValue) pitchValue.textContent = pitch.toFixed(1);
-    await updateSettings({ pitch });
-  });
-
-  // Volume control
-  volumeSlider?.addEventListener('input', async () => {
-    const volume = parseFloat(volumeSlider.value);
-    if (volumeValue) volumeValue.textContent = `${Math.round(volume * 100)}%`;
-    await updateSettings({ volume });
-  });
-
-  // Test button
-  testBtn?.addEventListener('click', () => {
+  // Handle test voice event from settings modal
+  document.addEventListener('settings-test-voice', () => {
     const config = window.CONFIG?.speech || {};
     const isNowSpeaking = isSpeaking && isSpeaking();
     if (isNowSpeaking) {
       stopSpeech();
-      testBtn.textContent = config.labels?.testButton || 'Test Voice';
       return;
     }
 
@@ -1156,22 +1036,28 @@ function setupSpeechSettings() {
     tempBtn.innerHTML = '🔊';
     document.body.appendChild(tempBtn);
 
-    // Start speaking and toggle label to Stop
-    testBtn.textContent = config.labels?.stop || 'Stop';
     toggleSpeech(tempDiv, tempBtn);
 
-    // Poll speaking state to revert label when finished
+    // Poll speaking state to cleanup when finished
     const poll = setInterval(() => {
       if (!isSpeaking || !isSpeaking()) {
         clearInterval(poll);
-        testBtn.textContent = config.labels?.testButton || 'Test Voice';
         tempDiv.remove();
         tempBtn.remove();
       }
     }, 250);
   });
 
-  log.info('Speech settings initialized');
+  // Handle clear history event from settings modal
+  document.addEventListener('settings-clear-history', async () => {
+    const content = document.getElementById('sp-content');
+    if (content) {
+      content.innerHTML = '';
+      log.info('Chat history cleared');
+    }
+  });
+
+  log.info('Settings modal initialized');
 }
 
 /**
@@ -1361,7 +1247,19 @@ async function initializeSidePanel() {
     setupTextareaResizing();
     setupToolsMenu();
     setupToolMentions();
-    setupSpeechSettings();
+    // Initialize settings system first
+    await initializeSettings();
+    
+    // Setup settings modal
+    await setupSettingsModal();
+    
+    // Check if help should be shown on load
+    const helpSettings = await getSettings('help');
+    if (helpSettings && helpSettings.showOnLoad !== false && window.CONFIG && window.CONFIG.onboarding) {
+      window.CONFIG.onboarding.enabled = true;
+    } else if (window.CONFIG && window.CONFIG.onboarding) {
+      window.CONFIG.onboarding.enabled = false;
+    }
     autoGrowTextarea();
 
     // Bind event listeners

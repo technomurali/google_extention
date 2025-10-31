@@ -15,6 +15,7 @@ import { PERMISSIONS, UI, ERROR_MESSAGES, STATUS_MESSAGES } from '../../core/con
 import { PermissionError } from '../../core/errors.js';
 import { ensurePermission, getPermissionDeniedMessage } from '../../services/permissions.js';
 import { logger } from '../../core/logger.js';
+import { getSettings } from '../../services/settings.js';
 
 const log = logger.create('Bookmarks');
 
@@ -81,12 +82,16 @@ export async function getAllBookmarks() {
  * @returns {Promise<Array>} Filtered bookmarks
  */
 export async function searchBookmarks(queryText) {
+  // Get settings for bookmarks tool
+  const bookmarkSettings = await getSettings('tools.bookmarks') || {};
+  const maxResults = bookmarkSettings.maxResults || UI.MAX_BOOKMARKS_DISPLAY;
+  
   const allBookmarks = await getAllBookmarks();
 
   // Handle empty, null, undefined, or whitespace-only queries - return all bookmarks
   if (!queryText || typeof queryText !== 'string') {
     log.info(`Returning all bookmarks (no query): ${allBookmarks.length} total`);
-    return allBookmarks.slice(0, UI.MAX_BOOKMARKS_DISPLAY);
+    return allBookmarks.slice(0, maxResults);
   }
 
   const trimmedQuery = queryText.trim();
@@ -94,7 +99,7 @@ export async function searchBookmarks(queryText) {
   // If query becomes empty after trimming whitespace, return all bookmarks
   if (!trimmedQuery) {
     log.info(`Returning all bookmarks (empty after trim): ${allBookmarks.length} total`);
-    return allBookmarks.slice(0, UI.MAX_BOOKMARKS_DISPLAY);
+    return allBookmarks.slice(0, maxResults);
   }
 
   const lowerQuery = trimmedQuery.toLowerCase();
@@ -106,7 +111,7 @@ export async function searchBookmarks(queryText) {
   });
 
   log.info(`Filtered to ${filtered.length} bookmarks matching "${trimmedQuery}" out of ${allBookmarks.length} total`);
-  return filtered.slice(0, UI.MAX_BOOKMARKS_DISPLAY);
+  return filtered.slice(0, maxResults);
 }
 
 /**

@@ -379,7 +379,7 @@ JAVASCRIPT:
       /* Size wraps to the widest item */
       width: max-content;
       min-width: 0;
-      background: var(--search-input-background, rgba(255,255,255,0.9));
+      background: var(--dropdown-background, rgba(255,255,255,0.95));
       border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
       border-radius: 10px;
       box-shadow: 0 8px 18px rgba(0,0,0,0.15);
@@ -400,7 +400,7 @@ JAVASCRIPT:
       white-space: nowrap; /* keep each item on one line */
     }
     .tools-menu .tool-item:hover {
-      background: var(--search-input-focus-background, rgba(255,255,255,1));
+      background: var(--sp-button-bg-hover, rgba(255,255,255,0.15));
     }
 
     /* Translate dropdown menu (within each bubble) */
@@ -409,7 +409,7 @@ JAVASCRIPT:
       right: 6px;
       top: 42px; /* below the buttons */
       width: 220px;
-      background: var(--search-input-background, rgba(255,255,255,0.9));
+      background: var(--dropdown-background, rgba(255,255,255,0.95));
       border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
       border-radius: 10px;
       box-shadow: 0 8px 18px rgba(0,0,0,0.15);
@@ -421,7 +421,7 @@ JAVASCRIPT:
     .msg .msg-translate-menu .translate-header {
       padding: 8px 10px;
       border-bottom: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
-      background: var(--search-input-focus-background, rgba(255,255,255,1));
+      background: var(--dropdown-background, rgba(255,255,255,0.95));
     }
     .msg .msg-translate-menu .translate-search {
       width: 100%;
@@ -451,7 +451,7 @@ JAVASCRIPT:
       white-space: nowrap;
     }
     .msg .msg-translate-menu .translate-item:hover {
-      background: var(--search-input-focus-background, rgba(255,255,255,1));
+      background: var(--sp-button-bg-hover, rgba(255,255,255,0.15));
     }
     .msg .msg-translate-menu .translate-divider {
       height: 1px;
@@ -608,190 +608,7 @@ JAVASCRIPT:
     }
     .content .ctx-add-btn:hover { background: var(--sp-button-bg-hover, rgba(255,255,255,0.25)); border-color: var(--sp-button-border-hover, rgba(255,255,255,0.35)); }
 
-    /* Speech Settings Modal */
-    .speech-settings-modal {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      backdrop-filter: blur(4px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-    .speech-settings-panel {
-      width: 90%;
-      max-width: 400px;
-      background: var(--search-input-background, rgba(255,255,255,0.95));
-      border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-      padding: 20px;
-      color: var(--search-input-text-color, #333);
-    }
-    .speech-settings-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 20px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--sp-input-border, rgba(0,0,0,0.1));
-    }
-    .speech-settings-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--search-input-text-color, #333);
-    }
-    .speech-settings-close {
-      appearance: none;
-      border: 0;
-      background: transparent;
-      font-size: 20px;
-      cursor: pointer;
-      color: var(--search-input-text-color, #333);
-      padding: 0;
-      width: 28px;
-      height: 28px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 6px;
-    }
-    .speech-settings-close:hover {
-      background: rgba(0,0,0,0.05);
-    }
-    .speech-settings-group {
-      margin-bottom: 18px;
-    }
-    .speech-settings-label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 8px;
-      color: var(--search-input-text-color, #333);
-    }
-    .speech-settings-input {
-      width: 100%;
-      padding: 8px 12px;
-      border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
-      border-radius: 8px;
-      font-size: 13px;
-      background: var(--search-input-background, rgba(255,255,255,0.9));
-      color: var(--search-input-text-color, #333);
-      box-sizing: border-box;
-    }
-    .speech-settings-input:focus {
-      outline: none;
-      border-color: var(--sp-input-border-focus, rgba(255,255,255,0.4));
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      background: var(--search-input-focus-background, rgba(255,255,255,1));
-    }
-    /* Custom voice dropdown to match tools menu */
-    .speech-voice-toggle {
-      width: 100%;
-      padding: 8px 12px;
-      border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
-      border-radius: 8px;
-      background: var(--search-input-background, rgba(255,255,255,0.85));
-      color: var(--search-input-text-color, #333);
-      font-size: 13px;
-      display: inline-flex; align-items: center; justify-content: space-between;
-      cursor: pointer;
-    }
-    .speech-voice-toggle:hover {
-      background: var(--search-input-focus-background, rgba(255,255,255,1));
-      border-color: var(--sp-input-border-focus, rgba(255,255,255,0.4));
-    }
-    .speech-voice-menu {
-      position: relative;
-    }
-    .speech-voice-menu .menu {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 6px;
-      background: var(--search-input-background, rgba(255,255,255,0.8));
-      border: 1px solid var(--sp-input-border, rgba(255,255,255,0.25));
-      border-radius: 10px;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.15);
-      backdrop-filter: blur(6px);
-      display: none;
-      z-index: 20;
-      max-height: 260px;
-      overflow: auto;
-    }
-    .speech-voice-menu .item {
-      padding: 8px 12px;
-      font-size: 13px;
-      color: var(--search-input-text-color, #333);
-      cursor: pointer;
-      background: transparent;
-      border: 0;
-      width: 100%;
-      text-align: left;
-      display: block;
-    }
-    .speech-voice-menu .item:hover {
-      background: var(--search-input-focus-background, rgba(255,255,255,1));
-    }
-    .speech-settings-slider {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .speech-settings-slider input[type="range"] {
-      flex: 1;
-      height: 6px;
-      border-radius: 3px;
-      background: var(--sp-input-border, rgba(0,0,0,0.1));
-      outline: none;
-      appearance: none;
-      -webkit-appearance: none;
-    }
-    .speech-settings-slider input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: var(--accent-brand, #667eea);
-      cursor: pointer;
-    }
-    .speech-settings-slider input[type="range"]::-moz-range-thumb {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: var(--accent-brand, #667eea);
-      cursor: pointer;
-      border: 0;
-    }
-    .speech-settings-value {
-      min-width: 40px;
-      text-align: right;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--search-input-text-color, #333);
-    }
-    .speech-settings-test {
-      width: 100%;
-      padding: 10px 16px;
-      border: 1px solid var(--sp-button-border, rgba(0,0,0,0.2));
-      background: var(--accent-brand, #667eea);
-      color: white;
-      border-radius: 10px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform .08s ease, opacity .2s ease;
-    }
-    .speech-settings-test:hover {
-      opacity: 0.9;
-    }
-    .speech-settings-test:active {
-      transform: translateY(1px);
-    }
+    /* Settings modal styles are added dynamically by settings-modal.js */
   </style>
 </head>
 
@@ -810,7 +627,7 @@ JAVASCRIPT:
       </div>
       <div class="topbar-right">
         <div class="status" id="sp-status"></div>      <!-- AI status indicator -->
-        <button class="settings-btn" id="sp-settings-btn" title="Speech Settings">⚙️</button>
+        <button class="settings-btn" id="sp-settings-btn" title="Settings">⚙️</button>
       </div>
     </div>
     
@@ -874,51 +691,7 @@ JAVASCRIPT:
     
   </div>
 
-  <!-- ========== SPEECH SETTINGS MODAL ========== -->
-  <div class="speech-settings-modal" id="sp-speech-settings">
-    <div class="speech-settings-panel">
-      <div class="speech-settings-header">
-        <div class="speech-settings-title" id="sp-speech-title">Speech Settings</div>
-        <button class="speech-settings-close" id="sp-speech-close">×</button>
-      </div>
-
-      <div class="speech-settings-group">
-        <label class="speech-settings-label" id="sp-voice-label">Voice</label>
-        <div class="speech-voice-menu" id="sp-voice">
-          <button class="speech-voice-toggle" id="sp-voice-toggle">Loading voices...</button>
-          <div class="menu" id="sp-voice-menu"></div>
-        </div>
-      </div>
-
-      <div class="speech-settings-group">
-        <label class="speech-settings-label" id="sp-speed-label">Speed</label>
-        <div class="speech-settings-slider">
-          <input type="range" id="sp-speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
-          <span class="speech-settings-value" id="sp-speed-value">1.0×</span>
-        </div>
-      </div>
-
-      <div class="speech-settings-group">
-        <label class="speech-settings-label" id="sp-pitch-label">Pitch</label>
-        <div class="speech-settings-slider">
-          <input type="range" id="sp-pitch-slider" min="0.5" max="2.0" step="0.1" value="1.0">
-          <span class="speech-settings-value" id="sp-pitch-value">1.0</span>
-        </div>
-      </div>
-
-      <div class="speech-settings-group">
-        <label class="speech-settings-label" id="sp-volume-label">Volume</label>
-        <div class="speech-settings-slider">
-          <input type="range" id="sp-volume-slider" min="0" max="1" step="0.05" value="1.0">
-          <span class="speech-settings-value" id="sp-volume-value">100%</span>
-        </div>
-      </div>
-
-      <div class="speech-settings-group">
-        <button class="speech-settings-test" id="sp-test-voice">Test Voice</button>
-      </div>
-    </div>
-  </div>
+  <!-- Settings modal is created dynamically by settings-modal.js -->
 
   <!-- ============================================================================
        SCRIPTS - Configuration and Modular Architecture

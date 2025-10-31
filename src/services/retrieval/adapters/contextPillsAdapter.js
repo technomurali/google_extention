@@ -161,7 +161,7 @@ async function chunkDocument(doc, options = {}) {
     overlapChars: Number(options.overlapChars || 300),
     minChunkChars: Number(options.minChunkChars || 800),
   };
-  const chunks = chunkContent(payload, cfg);
+  const chunks = await chunkContent(payload, cfg);
   return chunks.map((c) => ({
     id: String(c.id),
     docId: String(doc.id),

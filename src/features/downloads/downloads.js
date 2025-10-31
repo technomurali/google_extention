@@ -15,6 +15,7 @@ import { PERMISSIONS, UI, ERROR_MESSAGES } from '../../core/constants.js';
 import { PermissionError } from '../../core/errors.js';
 import { ensurePermission, getPermissionDeniedMessage } from '../../services/permissions.js';
 import { logger } from '../../core/logger.js';
+import { getSettings } from '../../services/settings.js';
 
 const log = logger.create('Downloads');
 
@@ -37,13 +38,17 @@ export async function searchDownloads(queryText) {
     );
   }
 
+  // Get settings for downloads tool
+  const downloadSettings = await getSettings('tools.downloads') || {};
+  const maxResults = downloadSettings.maxResults || UI.MAX_DOWNLOADS_DISPLAY;
+
   try {
     const query = queryText && typeof queryText === 'string'
       ? queryText.toLowerCase().trim()
       : '';
 
     const searchOptions = {
-      limit: UI.MAX_DOWNLOADS_DISPLAY,
+      limit: maxResults,
     };
 
     // Note: Chrome downloads.search() doesn't have a 'query' parameter
@@ -62,7 +67,7 @@ export async function searchDownloads(queryText) {
     }
 
     log.info(`Found ${results.length} downloads`);
-    return results;
+    return results.slice(0, maxResults);
   } catch (error) {
     log.error('Error searching downloads:', error);
     throw new PermissionError(ERROR_MESSAGES.ERROR_READING_DOWNLOADS, PERMISSIONS.DOWNLOADS);

@@ -37,6 +37,7 @@ import {
   getDefaultFavicon,
   clamp,
 } from '../../core/utils.js';
+import { getSettings } from '../../services/settings.js';
 
 const log = logger.history;
 
@@ -334,11 +335,16 @@ export async function searchHistory(classification) {
   const cleanKeywords = sanitizeKeywords(classification.keywords || []);
   const searchText = cleanKeywords.join(' ').trim();
 
-  // Determine result limit
+  // Get settings for history tool
+  const historySettings = await getSettings('tools.history') || {};
+  const defaultLimit = historySettings.maxResults || HISTORY.DEFAULT_LIMIT;
+  const maxLimit = UI.MAX_HISTORY_LIMIT;
+  
+  // Determine result limit (respect settings but allow user-specified limit)
   const maxResults = clamp(
-    classification.limit || HISTORY.DEFAULT_LIMIT,
+    classification.limit || defaultLimit,
     1,
-    UI.MAX_HISTORY_LIMIT
+    maxLimit
   );
 
   log.debug('Search parameters:', { searchText, startTime, maxResults });

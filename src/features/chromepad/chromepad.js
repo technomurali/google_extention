@@ -19,6 +19,7 @@ import { logger } from '../../core/logger.js';
 import { proofreadText, rewriteText, generateTextFromPrompt } from '../../services/ai_editing.js';
 import { translateText } from '../../services/translation.js';
 import { renderMarkdown } from '../../services/markdown.js';
+import { getSettings } from '../../services/settings.js';
 
 const log = logger.create('ChromePad');
 
@@ -1733,11 +1734,15 @@ export async function renderEditorBubble(noteId, startInPreview = false) {
 
   // Typewriter animation for generated text
   async function animateGeneratedText(textarea, newText, append = true) {
-    const cfg = (window.CONFIG && window.CONFIG.chromePad && window.CONFIG.chromePad.typewriterEffect) || {};
-    const enabled = cfg.enabled !== false;
-    const minLength = Number(cfg.minLength) || 50;
-    const maxChars = Number(cfg.maxAnimateChars) || 5000;
-    const delayMs = Number(cfg.delayMs) || 8;
+    // Get settings for ChromePad tool
+    const chromePadSettings = await getSettings('tools.chromepad') || {};
+    const configSettings = (window.CONFIG && window.CONFIG.chromePad && window.CONFIG.chromePad.typewriterEffect) || {};
+    
+    // Prefer settings over config (settings take precedence)
+    const enabled = chromePadSettings.typewriter !== false && configSettings.enabled !== false;
+    const minLength = Number(configSettings.minLength) || 50;
+    const maxChars = Number(configSettings.maxAnimateChars) || 5000;
+    const delayMs = Number(configSettings.delayMs) || 8;
 
     const textToAdd = String(newText || '');
 

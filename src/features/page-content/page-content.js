@@ -18,6 +18,8 @@
 //
 // ============================================================================
 
+import { getSettings } from '../../services/settings.js';
+
 /**
  * Captures all visible text content from the currently active browser tab.
  * 
@@ -164,8 +166,22 @@ export async function captureActivePage() {
  * const chunks = chunkContent({ text: longContent, headings: ["Introduction", "Conclusion"] });
  * console.log(`Created ${chunks.length} chunks`); // e.g., "Created 5 chunks"
  */
-export function chunkContent(payload, config) {
-  const cfg = Object.assign({ maxChunkChars: 12000, overlapChars: 500, minChunkChars: 1000 }, config || {});
+export async function chunkContent(payload, config) {
+  // Get settings for page tool (async, but can be called without await for backward compatibility)
+  let pageSettings = {};
+  try {
+    pageSettings = await getSettings('tools.page') || {};
+  } catch (e) {
+    // If settings not available (e.g., during initialization), use defaults
+  }
+  
+  const defaultConfig = {
+    maxChunkChars: pageSettings.maxChunk || 12000,
+    overlapChars: pageSettings.overlap || 500,
+    minChunkChars: 1000,
+  };
+  
+  const cfg = Object.assign(defaultConfig, config || {});
   const text = String(payload.text || '').trim();
   if (!text) return [];
 

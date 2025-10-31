@@ -124,10 +124,10 @@ async function chunkDocument(doc, options = {}) {
         sizeBytes: Number(c.sizeBytes || (c.content ? c.content.length : 0)),
       }));
     } else {
-      chunks = chunkContent(payload, cfg);
+      chunks = await chunkContent(payload, cfg);
     }
   } catch {
-    chunks = chunkContent(payload, cfg);
+    chunks = await chunkContent(payload, cfg);
   }
   return chunks.map((c) => ({
     id: String(c.id),

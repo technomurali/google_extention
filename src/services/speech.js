@@ -15,6 +15,7 @@
 // ============================================================================
 
 import { logger } from '../core/logger.js';
+import { getSettings, updateSettings as updateSettingsService, onSettingsChange } from './settings.js';
 
 const log = logger.create('Speech');
 
@@ -147,15 +148,41 @@ export async function initializeSpeech() {
   }
 
   try {
-    // Load saved settings
-    const stored = await chrome.storage.local.get('speechSettings');
-    if (stored.speechSettings) {
-      settings = { ...settings, ...stored.speechSettings };
-      log.info('Loaded speech settings:', settings);
+    // Load settings from centralized settings service
+    const audioSettings = await getSettings('audio');
+    if (audioSettings) {
+      // Restore voice object if voice name is stored
+      if (audioSettings.voice && typeof audioSettings.voice === 'string') {
+        settings.voice = await restoreVoice(audioSettings.voice);
+      } else if (audioSettings.voice && typeof audioSettings.voice === 'object') {
+        settings.voice = audioSettings.voice;
+      }
+      settings.rate = audioSettings.rate || settings.rate;
+      settings.pitch = audioSettings.pitch || settings.pitch;
+      settings.volume = audioSettings.volume || settings.volume;
+      log.info('Loaded speech settings from centralized service:', settings);
     }
 
     // Ensure voices are loaded
     await getVoices();
+    
+    // Listen for settings changes
+    onSettingsChange(async (allSettings) => {
+      if (allSettings.audio) {
+        const audioSettings = allSettings.audio;
+        if (audioSettings.voice) {
+          if (typeof audioSettings.voice === 'string') {
+            settings.voice = await restoreVoice(audioSettings.voice);
+          } else {
+            settings.voice = audioSettings.voice;
+          }
+        }
+        if (typeof audioSettings.rate === 'number') settings.rate = audioSettings.rate;
+        if (typeof audioSettings.pitch === 'number') settings.pitch = audioSettings.pitch;
+        if (typeof audioSettings.volume === 'number') settings.volume = audioSettings.volume;
+      }
+    });
+    
     log.info('Speech service initialized');
     return true;
   } catch (error) {
@@ -169,28 +196,31 @@ export async function initializeSpeech() {
 // ============================================
 
 /**
- * Gets current speech settings
+ * Gets current speech settings (from internal state, for backward compatibility)
  * @returns {Object}
  */
-export function getSettings() {
+export function getSpeechSettings() {
   return { ...settings };
 }
 
 /**
- * Updates speech settings and persists them
+ * Updates speech settings and persists them to centralized settings service
  * @param {Object} newSettings - Settings to update
  */
 export async function updateSettings(newSettings) {
+  // Update internal state
   settings = { ...settings, ...newSettings };
   
   try {
-    // Persist to storage (excluding voice object, save only voice name)
-    const toSave = {
-      ...settings,
-      voice: settings.voice ? settings.voice.name : null,
+    // Save to centralized settings service
+    const audioSettings = {
+      voice: settings.voice || null,
+      rate: settings.rate,
+      pitch: settings.pitch,
+      volume: settings.volume,
     };
-    await chrome.storage.local.set({ speechSettings: toSave });
-    log.info('Speech settings saved:', toSave);
+    await updateSettingsService('audio', audioSettings);
+    log.info('Speech settings saved to centralized service');
   } catch (error) {
     log.error('Failed to save speech settings:', error);
   }

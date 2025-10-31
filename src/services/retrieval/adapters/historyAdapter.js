@@ -80,7 +80,7 @@ async function fetchFullText(doc) { return String(doc.text || ''); }
 async function chunkDocument(doc, options = {}) {
   const payload = { title: doc.title || '', url: doc.url || '', text: String(doc.text || ''), headings: [] };
   const cfg = { maxChunkChars: 1000, overlapChars: 0, minChunkChars: 200, ...options };
-  const chunks = chunkContent(payload, cfg);
+  const chunks = await chunkContent(payload, cfg);
   return chunks.map((c) => ({
     id: String(c.id),
     docId: String(doc.id),

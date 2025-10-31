@@ -77,7 +77,7 @@ async function fetchFullText(doc) { return String(doc.text || ''); }
 async function chunkDocument(doc, options = {}) {
   const payload = { title: doc.title || '', url: doc.url || '', text: String(doc.text || ''), headings: [] };
   const cfg = { maxChunkChars: 600, overlapChars: 0, minChunkChars: 200, ...options };
-  const chunks = chunkContent(payload, cfg);
+  const chunks = await chunkContent(payload, cfg);
   return chunks.map((c) => ({ id: String(c.id), docId: String(doc.id), heading: c.heading || '', content: String(c.content || ''), sizeChars: Number(c.sizeBytes || c.content?.length || 0), index: Number(c.index || 0) }));
 }
 
