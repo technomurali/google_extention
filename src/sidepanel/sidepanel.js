@@ -79,7 +79,13 @@ async function renderAnswerWithSources(container, out, adapter, context, titleMa
   try {
     container.innerHTML = '';
     const ans = document.createElement('div');
-    ans.innerHTML = renderMarkdown(String(out.text || ''));
+    const answerMarkdown = String(out.text || '');
+    ans.innerHTML = renderMarkdown(answerMarkdown);
+    // Update rawMarkdown for export functionality
+    try {
+      const bubble = container.closest('.msg');
+      if (bubble) bubble.dataset.rawMarkdown = answerMarkdown;
+    } catch {}
     container.appendChild(ans);
 
     const used = out && out.usedRefs ? out.usedRefs : [];
@@ -109,7 +115,13 @@ async function renderAnswerWithSources(container, out, adapter, context, titleMa
             if (!chunk) return;
             const view = appendMessage('', 'ai');
             const title = (docTitle || targetDoc.title || 'Document') + (chunk.heading ? ' — ' + chunk.heading : '');
-            view.innerHTML = renderMarkdown(`**${title}**\n\n${chunk.content || ''}`);
+            const chunkMarkdown = `**${title}**\n\n${chunk.content || ''}`;
+            view.innerHTML = renderMarkdown(chunkMarkdown);
+            // Update rawMarkdown for export functionality
+            try {
+              const bubble = view.closest('.msg');
+              if (bubble) bubble.dataset.rawMarkdown = chunkMarkdown;
+            } catch {}
           } catch {}
         });
         li.appendChild(btn);
@@ -306,6 +318,11 @@ async function handleChatRequest(queryText) {
     // Final render as markdown
     const unwrapped = unwrapFullCodeFence(buffer);
     aiMessageElement.innerHTML = renderMarkdown(unwrapped);
+    // Update rawMarkdown for export functionality
+    try {
+      const bubble = aiMessageElement.closest('.msg');
+      if (bubble) bubble.dataset.rawMarkdown = unwrapped;
+    } catch {}
   } catch (err) {
     try {
       const response = await sendPrompt(queryText);
@@ -356,7 +373,13 @@ async function routeMessage(queryText) {
           parts.push('\n\nSources:');
           used.forEach((u) => parts.push(`- ${u.heading || u.chunkId}`));
         }
-        body.innerHTML = renderMarkdown(parts.join('\n'));
+        const fullMarkdown = parts.join('\n');
+        body.innerHTML = renderMarkdown(fullMarkdown);
+        // Update rawMarkdown for export functionality
+        try {
+          const bubble = body.closest('.msg');
+          if (bubble) bubble.dataset.rawMarkdown = fullMarkdown;
+        } catch {}
       } catch (err) {
         if (String(err && err.message) !== 'aborted') {
           appendMessage('Could not analyze your history.', 'ai');
@@ -404,7 +427,13 @@ async function routeMessage(queryText) {
           parts.push('\n\nSources:');
           used.forEach((u) => parts.push(`- ${u.heading || u.chunkId}`));
         }
-        body.innerHTML = renderMarkdown(parts.join('\n'));
+        const fullMarkdown = parts.join('\n');
+        body.innerHTML = renderMarkdown(fullMarkdown);
+        // Update rawMarkdown for export functionality
+        try {
+          const bubble = body.closest('.msg');
+          if (bubble) bubble.dataset.rawMarkdown = fullMarkdown;
+        } catch {}
       } catch (err) {
         if (String(err && err.message) !== 'aborted') {
           appendMessage('Could not analyze your downloads.', 'ai');
@@ -826,6 +855,11 @@ async function sendMessage() {
       }
       const unwrapped = unwrapFullCodeFence(buffer);
       aiMessageElement.innerHTML = renderMarkdown(unwrapped);
+      // Update rawMarkdown for export functionality
+      try {
+        const bubble = aiMessageElement.closest('.msg');
+        if (bubble) bubble.dataset.rawMarkdown = unwrapped;
+      } catch {}
       try { const { addAskThisResultButton } = await import('../ui/ui.js'); addAskThisResultButton(aiMessageElement); } catch {}
     }
   } catch (streamError) {
@@ -837,6 +871,11 @@ async function sendMessage() {
         if (stopThinking) { try { stopThinking(); } catch {} stopThinking = null; }
         const unwrapped2 = unwrapFullCodeFence(response);
         try { const { typewriterRenderMarkdown } = await import('../ui/ui.js'); await typewriterRenderMarkdown(aiMessageElement, unwrapped2, 3, 10); } catch { aiMessageElement.innerHTML = renderMarkdown(unwrapped2); }
+        // Update rawMarkdown for export functionality
+        try {
+          const bubble = aiMessageElement.closest('.msg');
+          if (bubble) bubble.dataset.rawMarkdown = unwrapped2;
+        } catch {}
         try { const { addAskThisResultButton } = await import('../ui/ui.js'); addAskThisResultButton(aiMessageElement); } catch {}
       } catch (promptError) {
         log.error('Chat request failed:', promptError);
