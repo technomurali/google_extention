@@ -262,6 +262,13 @@ const CONFIG = {
     processingChunkTemplate: 'Processing chunk {index}/{total}...',
     synthesizingLabel: 'Synthesizing final answer...',
     pillTruncateChars: 15,        // Characters shown on pill label
+
+    // URL optimization for list-to-context (History/Bookmarks/Downloads)
+    optimizeURLs: true,           // Enable URL/domain optimization in preview sent to LLM
+    maxURLChars: 50,              // Keep full URL if <= this length
+    maxPathSegments: 3,           // Keep up to this many path segments
+    maxPathChars: 30,             // Truncate path to this many chars
+    includeQueryForSearch: true,  // Extract and show search query if applicable
   },
 
   // ============================================

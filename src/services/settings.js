@@ -90,6 +90,12 @@ const DEFAULT_SETTINGS = {
     highlight: true,
     useRetrieval: true,
     preIndex: true,
+    // URL optimization for Ask iChrome previews from list results
+    optimizeURLs: true,
+    maxURLChars: 50,
+    maxPathSegments: 3,
+    maxPathChars: 30,
+    includeQueryForSearch: true,
   },
   appearance: {
     theme: 'auto', // 'auto', 'light', 'dark'

@@ -312,6 +312,135 @@ export function chunkText(text, options = {}) {
   return chunks;
 }
 
+/**
+ * Determines if a URL points to localhost or local IP
+ * @param {string} urlString
+ * @returns {boolean}
+ */
+export function isLocalhost(urlString) {
+  try {
+    const u = new URL(urlString);
+    const host = u.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Detects common search engines by domain
+ * @param {string} domain
+ * @returns {boolean}
+ */
+export function isSearchEngine(domain) {
+  if (!domain) return false;
+  const d = String(domain).toLowerCase();
+  return (
+    d.includes('google.') ||
+    d.endsWith('bing.com') ||
+    d.endsWith('duckduckgo.com') ||
+    d.endsWith('yahoo.com') ||
+    d.endsWith('yandex.ru') ||
+    d.endsWith('baidu.com')
+  );
+}
+
+/**
+ * Extracts a search query from URL common param names
+ * @param {string} urlString
+ * @returns {string|null}
+ */
+export function extractSearchQuery(urlString) {
+  try {
+    const u = new URL(urlString);
+    const params = u.searchParams;
+    const keys = ['q', 'query', 'p', 'search', 'text'];
+    for (const k of keys) {
+      const v = params.get(k);
+      if (v) return decodeURIComponent(v.replace(/\+/g, ' ')).trim();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Builds a short meaningful path string: up to N segments, truncated by chars
+ * @param {string} urlString
+ * @param {number} maxSegments
+ * @param {number} maxChars
+ * @returns {string} e.g., "/docs/getting-started"
+ */
+export function extractMeaningfulPath(urlString, maxSegments = 3, maxChars = 30) {
+  try {
+    const u = new URL(urlString);
+    const parts = String(u.pathname || '/').split('/').filter(Boolean).slice(0, Math.max(0, maxSegments));
+    if (parts.length === 0) return '';
+    let path = '/' + parts.join('/');
+    if (path.length > maxChars) {
+      path = path.slice(0, Math.max(1, maxChars - 1)) + '…';
+    }
+    return path;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Produces an optimized preview line for list items: Title — domain[/path] or search
+ * @param {{title?: string, url?: string, folder?: string, type?: string}} item
+ * @param {Object} options
+ * @param {Array} [allItems]
+ * @returns {string}
+ */
+export function optimizeURLForContext(item, options = {}, allItems = []) {
+  const cfg = options || {};
+  const title = String(item?.title || '').trim();
+  const url = String(item?.url || '').trim();
+  if (!url && title) return title;
+  if (!url) return '';
+
+  // If optimization is disabled, return Title — URL (classic)
+  if (cfg.optimizeURLs === false) {
+    return `${title || url} — ${url}`.trim();
+  }
+
+  const domain = extractDomain(url) || '';
+  const keepFull = url.length <= (cfg.maxURLChars || 50);
+
+  // Localhost: keep host:port and short path
+  if (isLocalhost(url)) {
+    try {
+      const u = new URL(url);
+      const hostPort = u.port ? `${u.hostname}:${u.port}` : u.hostname;
+      const path = extractMeaningfulPath(url, cfg.maxPathSegments || 3, cfg.maxPathChars || 30);
+      return `${title || hostPort} — ${hostPort}${path}`.trim();
+    } catch {
+      return `${title || domain} — ${domain}`.trim();
+    }
+  }
+
+  // Search engines: surface the query
+  if (cfg.includeQueryForSearch !== false && isSearchEngine(domain)) {
+    const q = extractSearchQuery(url);
+    if (q) {
+      return `${title || domain} — ${domain} (search: ${q})`.trim();
+    }
+  }
+
+  if (!domain) return `${title || url}`;
+
+  if (keepFull) {
+    // If already short, show the URL as-is
+    return `${title || domain} — ${url}`.trim();
+  }
+
+  // Default: domain plus short path for disambiguation
+  const path = extractMeaningfulPath(url, cfg.maxPathSegments || 3, cfg.maxPathChars || 30);
+  return `${title || domain} — ${domain}${path}`.trim();
+}
+
 // For non-module script compatibility
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -335,6 +464,11 @@ if (typeof module !== 'undefined' && module.exports) {
     sleep,
     retry,
     chunkText,
+    isLocalhost,
+    isSearchEngine,
+    extractSearchQuery,
+    extractMeaningfulPath,
+    optimizeURLForContext,
   };
 }
 

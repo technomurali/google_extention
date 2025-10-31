@@ -34,6 +34,7 @@ import {
   formatTimestamp,
   clamp,
   debounce,
+  optimizeURLForContext,
 } from '../core/utils.js';
 import { translateText } from '../services/translation.js';
 import { renderMarkdown } from '../services/markdown.js';
@@ -1682,15 +1683,22 @@ export function renderResults(items, existingElement = null) {
     askAll.textContent = 'Ask iChrome (these results)';
     askAll.addEventListener('click', () => {
       try {
-        const label = '📚 Results';
+        const label = `📚 Results (${items.length})`;
         // Build full, untruncated payload
         const structured = {
           kind: 'list',
-          format: 'history',
+          format: 'list',
           items: items.map((it) => ({ title: it.title || '', url: it.url || '', meta: { lastVisitTime: it.lastVisitTime || 0 } })),
         };
-        // Small preview text for the pill label body
-        const preview = items.slice(0, 20).map((it) => `${it.title || ''} — ${it.url || ''}`.trim()).join('\n');
+        // Build visible text for ALL items; addExternalContext will chunk if large
+        const cfg = (window.CONFIG && window.CONFIG.contextSelection) || {};
+        const preview = items.map((it) => {
+          try {
+            return optimizeURLForContext({ title: it.title || '', url: it.url || '' }, cfg, items);
+          } catch {
+            return `${it.title || ''} — ${it.url || ''}`.trim();
+          }
+        }).join('\n');
         if (preview) addExternalContext(preview, label, structured);
       } catch {}
     });

@@ -669,6 +669,86 @@ function renderContextSelectionPanel(container) {
       async (val) => await updateSettings('contextSelection', { preIndex: val })
     );
     container.appendChild(preIndexToggle);
+
+    // Optimize URLs in context preview
+    const optimizeToggle = createToggleGroup(
+      'Optimize URLs in Context Previews',
+      'sp-settings-context-optimizeurls',
+      settings.optimizeURLs !== false,
+      async (val) => {
+        await updateSettings('contextSelection', { optimizeURLs: val });
+        // Reflect immediately in CONFIG
+        if (window.CONFIG && window.CONFIG.contextSelection) {
+          window.CONFIG.contextSelection.optimizeURLs = val;
+        }
+      }
+    );
+    container.appendChild(optimizeToggle);
+
+    // Max URL chars (keep full URL if <=)
+    const maxUrlCharsGroup = createNumberGroup(
+      'Max URL Characters (keep full URL if ≤)',
+      'sp-settings-context-maxurlchars',
+      settings.maxURLChars || 50,
+      10,
+      200,
+      5,
+      async (val) => {
+        await updateSettings('contextSelection', { maxURLChars: val });
+        if (window.CONFIG && window.CONFIG.contextSelection) {
+          window.CONFIG.contextSelection.maxURLChars = val;
+        }
+      }
+    );
+    container.appendChild(maxUrlCharsGroup);
+
+    // Max path segments
+    const maxPathSegmentsGroup = createNumberGroup(
+      'Max Path Segments',
+      'sp-settings-context-maxpathsegments',
+      settings.maxPathSegments || 3,
+      0,
+      10,
+      1,
+      async (val) => {
+        await updateSettings('contextSelection', { maxPathSegments: val });
+        if (window.CONFIG && window.CONFIG.contextSelection) {
+          window.CONFIG.contextSelection.maxPathSegments = val;
+        }
+      }
+    );
+    container.appendChild(maxPathSegmentsGroup);
+
+    // Max path characters
+    const maxPathCharsGroup = createNumberGroup(
+      'Max Path Characters',
+      'sp-settings-context-maxpathchars',
+      settings.maxPathChars || 30,
+      10,
+      200,
+      5,
+      async (val) => {
+        await updateSettings('contextSelection', { maxPathChars: val });
+        if (window.CONFIG && window.CONFIG.contextSelection) {
+          window.CONFIG.contextSelection.maxPathChars = val;
+        }
+      }
+    );
+    container.appendChild(maxPathCharsGroup);
+
+    // Include search query for search engines
+    const includeSearchToggle = createToggleGroup(
+      'Include Search Query for Search Engines',
+      'sp-settings-context-includequery',
+      settings.includeQueryForSearch !== false,
+      async (val) => {
+        await updateSettings('contextSelection', { includeQueryForSearch: val });
+        if (window.CONFIG && window.CONFIG.contextSelection) {
+          window.CONFIG.contextSelection.includeQueryForSearch = val;
+        }
+      }
+    );
+    container.appendChild(includeSearchToggle);
   });
 }
 
