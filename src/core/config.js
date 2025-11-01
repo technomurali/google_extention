@@ -224,8 +224,9 @@ const CONFIG = {
     enabled: true,
     title: '👋 Welcome to iChrome — Your Intelligent Browser Companion',
     lines: [
+      'This Extension works only for Chrome based Canary Browser',
       '',
-      '### Private. Powerful. Personal.',
+      '### Private. Powerful. Personal. Intelligent Browser',
       '',
       '---',
       '',

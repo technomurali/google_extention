@@ -1764,9 +1764,37 @@ function showFullHelpGuide(cfg) {
   let idx = 0;
   const delay = Math.max(0, cfg.charDelayMs);
   
+  // Track if user has manually scrolled up
+  let userHasScrolledUp = false;
+  
+  // Detect manual scrolling
+  const scrollHandler = () => {
+    if (!elements.content) return;
+    const { scrollTop, scrollHeight, clientHeight } = elements.content;
+    const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 5;
+    userHasScrolledUp = !isAtBottom;
+  };
+  
+  // Add scroll listener
+  if (elements.content) {
+    elements.content.addEventListener('scroll', scrollHandler, { passive: true });
+  }
+  
   function typeNext() {
-    if (!onboardingEl || !body) return;
-    if (idx >= fullText.length) return;
+    if (!onboardingEl || !body) {
+      // Cleanup listener if animation stops
+      if (elements.content) {
+        elements.content.removeEventListener('scroll', scrollHandler);
+      }
+      return;
+    }
+    if (idx >= fullText.length) {
+      // Cleanup listener when done
+      if (elements.content) {
+        elements.content.removeEventListener('scroll', scrollHandler);
+      }
+      return;
+    }
     
     // Get current substring
     idx += 1;
@@ -1780,12 +1808,14 @@ function showFullHelpGuide(cfg) {
       body.textContent = currentText; // fallback to plain text
     }
     
-    // Scroll to bottom to follow typing
-    try {
-      if (elements.content) {
-        elements.content.scrollTop = elements.content.scrollHeight;
-      }
-    } catch {}
+    // Only auto-scroll if user hasn't manually scrolled up
+    if (!userHasScrolledUp) {
+      try {
+        if (elements.content) {
+          elements.content.scrollTop = elements.content.scrollHeight;
+        }
+      } catch {}
+    }
     
     setTimeout(typeNext, delay);
   }
