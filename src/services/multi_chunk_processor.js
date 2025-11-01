@@ -1,3 +1,7 @@
+// Copyright (c) 2025 Gundlapalli Muralidhar,
+// Licensed under the MIT License. See LICENSE file in the project root.
+// LinkedIn: https://www.linkedin.com/in/technomurali/
+//
 // ============================================================================
 // MULTI-CHUNK PROCESSOR - Query each context chunk and synthesize final answer
 // ============================================================================

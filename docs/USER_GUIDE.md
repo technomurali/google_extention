@@ -1,3 +1,9 @@
+<!--
+Copyright (c) 2025 Gundlapalli Muralidhar,
+Licensed under the MIT License. See LICENSE file in the project root.
+LinkedIn: https://www.linkedin.com/in/technomurali/
+-->
+
 # iChrome User Guide
 ## The Complete Guide to Your Intelligent Chrome Assistant
 

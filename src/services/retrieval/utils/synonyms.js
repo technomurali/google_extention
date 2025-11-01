@@ -1,3 +1,7 @@
+// Copyright (c) 2025 Gundlapalli Muralidhar,
+// Licensed under the MIT License. See LICENSE file in the project root.
+// LinkedIn: https://www.linkedin.com/in/technomurali/
+//
 // ============================================================================
 // Synonym Expansion (optional) - LLM-assisted with static fallback
 // ----------------------------------------------------------------------------

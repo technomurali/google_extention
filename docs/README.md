@@ -1,3 +1,9 @@
+<!--
+Copyright (c) 2025 Gundlapalli Muralidhar,
+Licensed under the MIT License. See LICENSE file in the project root.
+LinkedIn: https://www.linkedin.com/in/technomurali/
+-->
+
 # Browser AI Assistant - Chrome Extension
 
 > **Version 2.0** - Enterprise-grade Chrome extension with AI chat, browser history, bookmarks, and downloads search.

@@ -1,3 +1,7 @@
+// Copyright (c) 2025 Gundlapalli Muralidhar,
+// Licensed under the MIT License. See LICENSE file in the project root.
+// LinkedIn: https://www.linkedin.com/in/technomurali/
+//
 // ============================================================================
 // IndexStore - chrome.storage backed index cache with simple LRU/TTL policies
 // ----------------------------------------------------------------------------

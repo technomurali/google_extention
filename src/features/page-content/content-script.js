@@ -1,3 +1,7 @@
+// Copyright (c) 2025 Gundlapalli Muralidhar,
+// Licensed under the MIT License. See LICENSE file in the project root.
+// LinkedIn: https://www.linkedin.com/in/technomurali/
+//
 // Injected into the active tab to extract readable text content.
 // Focus on visible text; ignore scripts/styles. PDFs or non-HTML pages will yield minimal text.
 
