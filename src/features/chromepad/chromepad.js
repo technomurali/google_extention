@@ -228,13 +228,24 @@ function downloadFile(content, filename, mimeType = 'text/plain') {
 async function exportNote(note) {
   if (!note) return;
 
-  const userChoseTxt = confirm(
-    `Export "${note.name || 'Untitled'}":\n\n` +
-    `OK = Plain Text (.txt) - removes markdown formatting\n` +
-    `Cancel = Markdown (.md) - keeps markdown syntax`
-  );
-
-  const isPlainText = !!userChoseTxt;
+  // Prefer the note's explicit format or infer from name/content
+  const preferred = detectNoteType(note.content, note.format, note.name);
+  let isPlainText = false;
+  if (preferred && preferred.type === 'md') {
+    const userChoseMd = confirm(
+      `Export "${note.name || 'Untitled'}":\n\n` +
+      `OK = Markdown (.md) - keeps markdown syntax\n` +
+      `Cancel = Plain Text (.txt) - removes markdown formatting`
+    );
+    isPlainText = !userChoseMd;
+  } else {
+    const userChoseTxt = confirm(
+      `Export "${note.name || 'Untitled'}":\n\n` +
+      `OK = Plain Text (.txt) - removes markdown formatting\n` +
+      `Cancel = Markdown (.md) - keeps markdown syntax`
+    );
+    isPlainText = !!userChoseTxt;
+  }
   const extension = isPlainText ? 'txt' : 'md';
 
   // Safe filename
@@ -517,10 +528,13 @@ async function handleFileImport(files, listElement, refreshListCallback) {
       // Read file content
       const content = await readFileAsText(file);
 
-      // Extract name from filename (remove extension)
-      const baseName = String(file.name || 'Imported')
+      // Extract name from filename (remove extension) and capture format
+      const originalName = String(file.name || 'Imported');
+      const baseName = originalName
         .replace(/\.(txt|md)$/i, '')
         .trim() || 'Imported';
+      const extMatch = /\.(txt|md)$/i.exec(originalName);
+      const detectedFormat = extMatch ? extMatch[1].toLowerCase() : undefined;
 
       // Get unique name
       const uniqueName = getUniqueNoteName(baseName, notesMap);
@@ -532,6 +546,8 @@ async function handleFileImport(files, listElement, refreshListCallback) {
         id,
         name: uniqueName,
         content: content,
+        // Preserve original import format when available ("md" or "txt")
+        format: detectedFormat,
         createdAt: now,
         updatedAt: now
       };
@@ -664,9 +680,27 @@ function getRelativeTime(timestamp) {
  * @param {string} content - Note content to analyze
  * @returns {{isMarkdown: boolean, type: string, typeLabel: string, icon: string}}
  */
-function detectNoteType(content) {
+function detectNoteType(content, preferredFormat, noteName) {
   try {
     const text = String(content || '').trim();
+    const pref = String(preferredFormat || '').toLowerCase();
+    const name = String(noteName || '');
+    // Prefer explicit format when provided
+    if (pref === 'md') {
+      return { isMarkdown: true, type: 'md', typeLabel: 'Markdown File', icon: '📝' };
+    }
+    if (pref === 'txt') {
+      return { isMarkdown: false, type: 'txt', typeLabel: 'Text File', icon: '📄' };
+    }
+
+    // Next, infer from filename extension if available
+    const lowerName = name.toLowerCase();
+    if (lowerName.endsWith('.md')) {
+      return { isMarkdown: true, type: 'md', typeLabel: 'Markdown File', icon: '📝' };
+    }
+    if (lowerName.endsWith('.txt')) {
+      return { isMarkdown: false, type: 'txt', typeLabel: 'Text File', icon: '📄' };
+    }
     
     // If empty, default to text file
     if (!text) {
@@ -942,7 +976,7 @@ export async function renderNotesListBubble() {
 
       // Create custom styled tooltip (for filename and type)
       let tooltip = null;
-      const typeInfo = detectNoteType(n.content);
+      const typeInfo = detectNoteType(n.content, n.format, n.name);
       if (n.content && tooltipsEnabled) {
         const previewText = getPreviewLines(n.content);
         if (previewText) {

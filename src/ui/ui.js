@@ -1611,10 +1611,15 @@ export function showOnboardingHelp(config = {}) {
   onboardingEl.style.transform = 'translateY(4px)';
   onboardingEl.style.transition = `opacity ${window.CONFIG?.animation?.duration || '0.3s'} ${window.CONFIG?.animation?.easing || 'ease-out'}, transform ${window.CONFIG?.animation?.duration || '0.3s'} ${window.CONFIG?.animation?.easing || 'ease-out'}`;
 
-  // Start with title, then type lines progressively
-  const fragments = [cfg.title, '', ...cfg.lines];
+  // Build message body for markdown rendering
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  
+  // Combine title and lines into markdown content
+  const fragments = [cfg.title, ...cfg.lines];
   const fullText = fragments.join('\n');
-  onboardingEl.textContent = '';
+  
+  onboardingEl.appendChild(body);
   elements.content.appendChild(onboardingEl);
 
   // Fade in container
@@ -1623,17 +1628,38 @@ export function showOnboardingHelp(config = {}) {
     onboardingEl.style.transform = 'translateY(0)';
   });
 
-  // Typewriter effect
+  // Typewriter effect with markdown rendering
   let idx = 0;
   const delay = Math.max(0, cfg.charDelayMs);
+  
   function typeNext() {
-    if (!onboardingEl) return;
+    if (!onboardingEl || !body) return;
     if (idx >= fullText.length) return;
-    onboardingEl.textContent += fullText[idx];
+    
+    // Get current substring
     idx += 1;
+    const currentText = fullText.slice(0, idx);
+    
+    // Re-render markdown with current text
+    try {
+      body.innerHTML = renderMarkdown(currentText);
+    } catch (error) {
+      console.error('[UI] Failed to render onboarding markdown:', error);
+      body.textContent = currentText; // fallback to plain text
+    }
+    
+    // Scroll to bottom to follow typing
+    try {
+      if (elements.content) {
+        elements.content.scrollTop = elements.content.scrollHeight;
+      }
+    } catch {}
+    
     setTimeout(typeNext, delay);
   }
-  setTimeout(typeNext, delay);
+  
+  // Start typewriter after fade-in animation
+  setTimeout(typeNext, 100);
 }
 
 /**
