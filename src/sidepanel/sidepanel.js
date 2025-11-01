@@ -232,20 +232,26 @@ async function handleBookmarksRequest(queryText) {
     const raw = String(queryText || '');
     const sanitizedQuery = raw.replace(/^User:\s*/i, '').trim();
     log.info(`Handling bookmarks request with query: "${raw}" (sanitized: "${sanitizedQuery}")`);
+    
+    // Attempt to fetch bookmarks
     const bookmarks = await searchBookmarks(sanitizedQuery);
 
     log.info(`Received ${bookmarks.length} bookmarks from search`);
 
+    // Handle empty results
     if (bookmarks.length === 0) {
       const trimmedQuery = sanitizedQuery;
       if (trimmedQuery) {
+        // Search query provided but no matches
         loadingMessage.textContent = `No bookmarks found matching "${trimmedQuery}".`;
       } else {
-        loadingMessage.textContent = ERROR_MESSAGES.NO_BOOKMARKS_FOUND + ' Make sure you have granted bookmarks permission.';
+        // Empty query - user wants to see all bookmarks
+        loadingMessage.textContent = 'No bookmarks found. You may not have any bookmarks saved, or bookmarks permission may not be granted.';
       }
       return;
     }
 
+    // Convert and render results
     const results = convertBookmarksToResults(bookmarks);
     log.info(`Rendering ${results.length} bookmark results`);
     renderResults(results, loadingMessage);
@@ -254,11 +260,16 @@ async function handleBookmarksRequest(queryText) {
     log.error('Error details:', {
       message: error.message,
       stack: error.stack,
-      queryText: queryText
+      queryText: queryText,
+      errorType: error.constructor?.name || typeof error
     });
 
+    // Handle specific error types
     if (error instanceof PermissionError) {
-      loadingMessage.textContent = error.message;
+      loadingMessage.textContent = error.message + ' Please grant bookmarks permission in chrome://extensions → Details → Permissions.';
+    } else if (error.message && error.message.includes('bookmarks')) {
+      // Chrome API errors related to bookmarks
+      loadingMessage.textContent = `Error accessing bookmarks: ${error.message}. Please check that bookmarks permission is granted.`;
     } else {
       loadingMessage.textContent = formatErrorForUser(error, ERROR_MESSAGES.ERROR_READING_BOOKMARKS);
     }
