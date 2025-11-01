@@ -914,15 +914,54 @@ function renderHelpPanel(container) {
     const guideBtn = document.createElement('button');
     guideBtn.className = 'settings-action-btn';
     guideBtn.textContent = 'View User Guide';
-    guideBtn.addEventListener('click', () => {
-      // Open user guide markdown file directly
-      // Note: This will show raw markdown in browser
+    guideBtn.addEventListener('click', async () => {
+      // Close the settings modal
+      closeModal();
+      
+      // Create an AI bubble notification about the user guide
       try {
-        const url = chrome.runtime.getURL('docs/USER_GUIDE.md');
-        window.open(url, '_blank');
+        // Dynamically import appendMessage and setSelectedTool from ui.js
+        const { appendMessage, setSelectedTool } = await import('./ui.js');
+        const { TOOLS } = await import('../core/constants.js');
+        
+        // Create a clickable AI bubble
+        const guideBubble = appendMessage('📖 User Guide is available in ChromePad. Click here to view it.', 'ai');
+        guideBubble.style.cursor = 'pointer';
+        guideBubble.style.opacity = '0.95';
+        guideBubble.style.background = 'rgba(102, 126, 234, 0.15)'; // Brand color tint
+        guideBubble.style.borderLeft = '3px solid #667eea'; // Brand accent
+        guideBubble.title = 'Click to open User Guide in ChromePad';
+        
+        // Add click handler to open user guide in ChromePad
+        guideBubble.addEventListener('click', async () => {
+          try {
+            // Switch to ChromePad tool
+            setSelectedTool(TOOLS.CHROMEPAD);
+            
+            // Initialize ChromePad and load the user guide
+            if (window.ChromePad && typeof window.ChromePad.renderNotesListBubble === 'function') {
+              await window.ChromePad.renderNotesListBubble();
+              
+              // Find and open the user guide note
+              // Wait a bit for the list to render
+              setTimeout(async () => {
+                try {
+                  const { findUserGuideNoteId, renderEditorBubble } = await import('../features/chromepad/chromepad.js');
+                  const guideNoteId = await findUserGuideNoteId();
+                  if (guideNoteId && typeof renderEditorBubble === 'function') {
+                    await renderEditorBubble(guideNoteId, true); // true = open in preview mode (read-only)
+                  }
+                } catch (err) {
+                  log.error('Failed to open user guide note:', err);
+                }
+              }, 300);
+            }
+          } catch (err) {
+            console.error('Failed to navigate to ChromePad:', err);
+          }
+        });
       } catch (error) {
-        // Fallback: try relative path
-        window.open('docs/USER_GUIDE.md', '_blank');
+        log.error('Failed to show user guide bubble:', error);
       }
     });
     guideGroup.appendChild(guideBtn);

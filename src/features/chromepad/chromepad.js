@@ -407,6 +407,21 @@ async function initializeUserGuideNote() {
   }
 }
 
+/**
+ * Finds the user guide note ID (used to open it from settings)
+ * @returns {Promise<string|null>} User guide note ID or null if not found
+ */
+export async function findUserGuideNoteId() {
+  try {
+    const notesMap = await readNotesMap();
+    const guideNote = Object.values(notesMap).find(n => isUserGuideNote(n));
+    return guideNote ? guideNote.id : null;
+  } catch (error) {
+    log.error('Failed to find user guide note:', error);
+    return null;
+  }
+}
+
 // -----------------------------
 // File Import Helpers
 // -----------------------------
