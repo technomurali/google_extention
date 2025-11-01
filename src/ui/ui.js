@@ -1602,6 +1602,138 @@ export function showOnboardingHelp(config = {}) {
     charDelayMs: typeof config.charDelayMs === 'number' ? config.charDelayMs : 12,
   };
 
+  // First, show a prompt asking if user wants help
+  showHelpPrompt(cfg);
+}
+
+/**
+ * Shows an interactive prompt asking user if they want basic help
+ * @param {{title?: string, lines?: string[], charDelayMs?: number}} cfg - Configuration
+ */
+function showHelpPrompt(cfg) {
+  // Render as an AI message bubble to match chat
+  onboardingEl = document.createElement('div');
+  onboardingEl.className = `${SELECTORS.CLASS_MSG} ai`;
+  onboardingEl.setAttribute('role', 'log');
+  onboardingEl.setAttribute('aria-live', 'polite');
+  onboardingEl.style.opacity = '0';
+  onboardingEl.style.transform = 'translateY(4px)';
+  onboardingEl.style.transition = `opacity ${window.CONFIG?.animation?.duration || '0.3s'} ${window.CONFIG?.animation?.easing || 'ease-out'}, transform ${window.CONFIG?.animation?.duration || '0.3s'} ${window.CONFIG?.animation?.easing || 'ease-out'}`;
+
+  // Build message body
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.style.padding = '16px';
+  
+  // Prompt message
+  const promptText = document.createElement('div');
+  promptText.textContent = '👋 Welcome to iChrome! Would you like to see a quick guide to get started?';
+  promptText.style.fontSize = '14px';
+  promptText.style.marginBottom = '12px';
+  promptText.style.lineHeight = '1.5';
+  
+  // Button container
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.display = 'flex';
+  buttonContainer.style.gap = '10px';
+  buttonContainer.style.justifyContent = 'flex-start';
+  
+  // Yes button
+  const yesBtn = document.createElement('button');
+  yesBtn.textContent = '✓ Yes, show me';
+  yesBtn.className = 'send-btn';
+  yesBtn.style.padding = '8px 16px';
+  yesBtn.style.fontSize = '13px';
+  yesBtn.style.cursor = 'pointer';
+  yesBtn.style.background = 'var(--accent-brand, #667eea)';
+  yesBtn.style.color = 'white';
+  yesBtn.style.border = 'none';
+  yesBtn.style.borderRadius = '8px';
+  yesBtn.style.fontWeight = '600';
+  
+  // No button
+  const noBtn = document.createElement('button');
+  noBtn.textContent = '✗ No, thanks';
+  noBtn.className = 'send-btn';
+  noBtn.style.padding = '8px 16px';
+  noBtn.style.fontSize = '13px';
+  noBtn.style.cursor = 'pointer';
+  noBtn.style.background = 'rgba(128, 128, 128, 0.2)';
+  noBtn.style.color = 'var(--search-input-text-color, #333)';
+  noBtn.style.border = '1px solid rgba(128, 128, 128, 0.3)';
+  noBtn.style.borderRadius = '8px';
+  noBtn.style.fontWeight = '500';
+  
+  // Hover effects
+  yesBtn.addEventListener('mouseenter', () => {
+    yesBtn.style.opacity = '0.9';
+  });
+  yesBtn.addEventListener('mouseleave', () => {
+    yesBtn.style.opacity = '1';
+  });
+  
+  noBtn.addEventListener('mouseenter', () => {
+    noBtn.style.background = 'rgba(128, 128, 128, 0.3)';
+  });
+  noBtn.addEventListener('mouseleave', () => {
+    noBtn.style.background = 'rgba(128, 128, 128, 0.2)';
+  });
+  
+  // Yes button click handler
+  yesBtn.addEventListener('click', () => {
+    // Remove the prompt bubble
+    if (onboardingEl && onboardingEl.parentElement) {
+      onboardingEl.style.opacity = '0';
+      setTimeout(() => {
+        if (onboardingEl && onboardingEl.parentElement) {
+          onboardingEl.parentElement.removeChild(onboardingEl);
+        }
+        onboardingEl = null;
+        // Show the full help guide
+        showFullHelpGuide(cfg);
+      }, 300);
+    }
+  });
+  
+  // No button click handler
+  noBtn.addEventListener('click', () => {
+    // Remove the prompt bubble
+    if (onboardingEl && onboardingEl.parentElement) {
+      onboardingEl.style.opacity = '0';
+      setTimeout(() => {
+        if (onboardingEl && onboardingEl.parentElement) {
+          onboardingEl.parentElement.removeChild(onboardingEl);
+        }
+        onboardingEl = null;
+        // Show acknowledgment message (stays visible)
+        const ackBubble = appendMessage('👍 No problem! You can access help anytime from Settings → Help.', 'ai');
+        ackBubble.style.opacity = '0.85';
+      }, 300);
+    }
+  });
+  
+  buttonContainer.appendChild(yesBtn);
+  buttonContainer.appendChild(noBtn);
+  
+  body.appendChild(promptText);
+  body.appendChild(buttonContainer);
+  onboardingEl.appendChild(body);
+  elements.content.appendChild(onboardingEl);
+
+  // Fade in container
+  requestAnimationFrame(() => {
+    onboardingEl.style.opacity = '1';
+    onboardingEl.style.transform = 'translateY(0)';
+  });
+  
+  scrollToBottom();
+}
+
+/**
+ * Shows the full help guide with typewriter effect
+ * @param {{title?: string, lines?: string[], charDelayMs?: number}} cfg - Configuration
+ */
+function showFullHelpGuide(cfg) {
   // Render as an AI message bubble to match chat
   onboardingEl = document.createElement('div');
   onboardingEl.className = `${SELECTORS.CLASS_MSG} ai`;

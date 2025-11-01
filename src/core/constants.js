@@ -134,6 +134,7 @@ export const TOOLS = {
   DOWNLOADS: 'downloads',
   PAGE: 'page',
   CHROMEPAD: 'chromepad',
+  HELP: 'help',
 };
 
 /**

@@ -350,6 +350,69 @@ async function handleChatRequest(queryText) {
 }
 
 /**
+ * Handles help tool request - shows onboarding prompt and user guide option
+ * Then switches back to chat mode
+ */
+async function handleHelpRequest() {
+  log.info('Showing help resources');
+  
+  // First, show the onboarding help prompt
+  try {
+    const { showOnboardingHelp } = await import('../ui/ui.js');
+    const config = window.CONFIG?.onboarding || {};
+    showOnboardingHelp(config);
+  } catch (error) {
+    log.error('Failed to show onboarding help:', error);
+  }
+  
+  // Then, show the user guide bubble
+  try {
+    const { appendMessage, setSelectedTool } = await import('../ui/ui.js');
+    
+    // Create a clickable AI bubble for the user guide
+    const guideBubble = appendMessage('📖 View comprehensive User Guide in ChromePad. Click here to open it.', 'ai');
+    guideBubble.style.cursor = 'pointer';
+    guideBubble.style.opacity = '0.95';
+    guideBubble.style.background = 'rgba(102, 126, 234, 0.15)'; // Brand color tint
+    guideBubble.style.borderLeft = '3px solid #667eea'; // Brand accent
+    guideBubble.title = 'Click to open User Guide in ChromePad';
+    
+    // Add click handler to open user guide in ChromePad
+    guideBubble.addEventListener('click', async () => {
+      try {
+        // Switch to ChromePad tool
+        setSelectedTool(TOOLS.CHROMEPAD);
+        
+        // Initialize ChromePad and load the user guide
+        if (window.ChromePad && typeof window.ChromePad.renderNotesListBubble === 'function') {
+          await window.ChromePad.renderNotesListBubble();
+          
+          // Find and open the user guide note
+          setTimeout(async () => {
+            try {
+              const { findUserGuideNoteId, renderEditorBubble } = await import('../features/chromepad/chromepad.js');
+              const guideNoteId = await findUserGuideNoteId();
+              if (guideNoteId && typeof renderEditorBubble === 'function') {
+                await renderEditorBubble(guideNoteId, true); // true = open in preview mode (read-only)
+              }
+            } catch (err) {
+              log.error('Failed to open user guide note:', err);
+            }
+          }, 300);
+        }
+      } catch (err) {
+        log.error('Failed to navigate to ChromePad:', err);
+      }
+    });
+    
+    // Switch back to chat mode after showing help resources
+    setSelectedTool(TOOLS.CHAT);
+  } catch (error) {
+    log.error('Failed to show user guide bubble:', error);
+  }
+}
+
+/**
  * Routes message to appropriate handler based on selected tool and classification
  * @param {string} queryText - User's message
  */
@@ -470,6 +533,10 @@ async function routeMessage(queryText) {
 
     case TOOLS.CHROMEPAD:
       await handleChromePadRequest(queryText);
+      return;
+
+    case TOOLS.HELP:
+      await handleHelpRequest();
       return;
 
     case TOOLS.CHAT:

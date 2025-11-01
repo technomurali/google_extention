@@ -586,6 +586,7 @@ const CONFIG = {
       { id: 'bookmarks', label: '@Bookmarks', icon: '🔖', aliases: ['@saved', '@favorites'] },
       { id: 'downloads', label: '@Downloads', icon: '📥', aliases: ['@files'] },
       { id: 'chromepad', label: '@ChromePad', icon: '📝', aliases: ['@notes', '@notepad'] },
+      { id: 'help', label: '@Help', icon: '❓', aliases: ['@guide', '@support'] },
     ],
   },
 
